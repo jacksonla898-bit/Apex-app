@@ -21,13 +21,15 @@ const Toast = ({ message, onClose }) => {
 }
 
 // Modal component for Copy Trade
-const CopyTradeModal = ({ trader, post, onConfirm, onCancel }) => {
+const CopyTradeModal = ({ modalData, onConfirm, onCancel, onQuantityChange }) => {
+  const { post, quantity, loading } = modalData
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-end">
       <div className="w-full max-w-2xl mx-auto bg-[#1a1a1a] rounded-t-2xl p-6 border-t border-[#2a2a2a]">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-xl font-bold text-white">Copy This Trade?</h3>
-          <button onClick={onCancel} className="text-gray-400 hover:text-white text-2xl">
+          <button onClick={(e) => { e.preventDefault(); onCancel(); }} type="button" className="text-gray-400 hover:text-white text-2xl">
             ✕
           </button>
         </div>
@@ -36,31 +38,56 @@ const CopyTradeModal = ({ trader, post, onConfirm, onCancel }) => {
           <div className="bg-[#0f0f0f] rounded-lg p-4 space-y-3">
             <div className="space-y-1">
               <p className="text-gray-400 text-sm">Trader</p>
-              <p className="text-white font-semibold">{trader}</p>
+              <p className="text-white font-semibold">{post.username}</p>
             </div>
             <div className="border-t border-[#2a2a2a] pt-3 space-y-1">
-              <p className="text-gray-400 text-sm">Trading</p>
-              <p className="text-white font-semibold">{post.tags[0]}</p>
+              <p className="text-gray-400 text-sm">Signal</p>
+              <p className={`font-semibold ${post.signal === 'BUY' ? 'text-emerald-400' : 'text-red-400'}`}>
+                {post.signal} {post.ticker}
+              </p>
             </div>
             <div className="border-t border-[#2a2a2a] pt-3">
               <p className="text-gray-400 text-sm mb-1">Strategy</p>
-              <p className="text-gray-300 text-sm">{post.text}</p>
+              <p className="text-gray-300 text-sm">{post.content}</p>
             </div>
+          </div>
+
+          <div className="bg-[#0f0f0f] rounded-lg p-4">
+            <label className="block text-gray-400 text-sm mb-2">Quantity (Shares)</label>
+            <input
+              type="number"
+              min="1"
+              value={quantity}
+              onChange={(e) => onQuantityChange(parseInt(e.target.value) || 1)}
+              className="w-full bg-[#2a2a2a] border border-[#3a3a3a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+              disabled={loading}
+            />
           </div>
         </div>
 
         <div className="flex gap-3">
           <button
             onClick={onCancel}
-            className="flex-1 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-semibold py-3 rounded-lg transition"
+            disabled={loading}
+            type="button"
+            className="flex-1 bg-[#2a2a2a] hover:bg-[#3a3a3a] disabled:opacity-50 text-white font-semibold py-3 rounded-lg transition"
           >
             Cancel
           </button>
           <button
-            onClick={onConfirm}
-            className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 rounded-lg transition"
+            onClick={(e) => { e.preventDefault(); onConfirm(e); }}
+            disabled={loading}
+            type="button"
+            className="flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-semibold py-3 rounded-lg transition flex items-center justify-center"
           >
-            Confirm Copy
+            {loading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                Placing Trade...
+              </>
+            ) : (
+              'Confirm Copy'
+            )}
           </button>
         </div>
       </div>
@@ -290,6 +317,7 @@ const FeedScreen = ({ onUserClick }) => {
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
   const [postTradeModal, setPostTradeModal] = useState(false)
+  const [copyTradeModal, setCopyTradeModal] = useState(null)
   const [user, setUser] = useState(null)
   const [userLikes, setUserLikes] = useState({})
   const [replies, setReplies] = useState({})
@@ -354,7 +382,14 @@ const FeedScreen = ({ onUserClick }) => {
         .order('created_at', { ascending: false })
       
       if (error) throw error
-      setPosts(data || [])
+      
+      // Transform the data to include username from profile if needed, with fallback to email prefix
+      const transformedPosts = data?.map(post => ({
+        ...post,
+        username: post.username || 'Unknown'
+      })) || []
+      
+      setPosts(transformedPosts)
       if (user) fetchUserLikes()
     } catch (err) {
       console.error('Error fetching posts:', err)
@@ -386,12 +421,24 @@ const FeedScreen = ({ onUserClick }) => {
     try {
       const { data, error } = await supabase
         .from('replies')
-        .select('*')
+        .select(`
+          *,
+          profiles:user_id (
+            username
+          )
+        `)
         .order('created_at', { ascending: true })
       
       if (error) throw error
+      
+      // Transform the data to include username from profile, with fallback to email prefix
+      const transformedReplies = data?.map(reply => ({
+        ...reply,
+        username: reply.profiles?.username || (reply.username?.split('@')[0] || 'Unknown')
+      })) || []
+      
       const repliesByPost = {}
-      data?.forEach(reply => {
+      transformedReplies.forEach(reply => {
         if (!repliesByPost[reply.post_id]) repliesByPost[reply.post_id] = []
         repliesByPost[reply.post_id].push(reply)
       })
@@ -408,10 +455,22 @@ const FeedScreen = ({ onUserClick }) => {
         return
       }
 
+      // Get username from profile
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('id', user.id)
+        .single()
+
+      let username = user.email?.split('@')[0] || 'Unknown' // fallback to email prefix
+      if (!profileError && profile?.username) {
+        username = profile.username
+      }
+
       const { error } = await supabase.from('posts').insert([
         {
           user_id: user.id,
-          username: user.email,
+          username: username,
           ticker: postData.ticker,
           signal: postData.signal,
           content: postData.content,
@@ -466,36 +525,46 @@ const FeedScreen = ({ onUserClick }) => {
     }
   }
 
-  const handleReply = async (postId) => {
-    if (!user) {
-      setToast('Please log in to reply')
-      return
-    }
+  const handleCopyTrade = (post) => {
+    setCopyTradeModal({ post, quantity: 1, loading: false })
+  }
 
-    if (!replyContent.trim()) {
-      setToast('Reply cannot be empty')
-      return
-    }
+  const handleConfirmCopyTrade = async (e) => {
+    if (e) e.preventDefault()
+    if (!copyTradeModal) return
+
+    setCopyTradeModal(prev => ({ ...prev, loading: true }))
 
     try {
-      const { error } = await supabase
-        .from('replies')
-        .insert([{
-          post_id: postId,
-          user_id: user.id,
-          username: user.email,
-          content: replyContent,
-          created_at: new Date().toISOString()
-        }])
+      const { post, quantity } = copyTradeModal
+      const side = post.signal === 'BUY' ? 'buy' : 'sell'
 
-      if (error) throw error
-      setReplyContent('')
-      setReplyingTo(null)
-      setToast('Reply posted!')
-      fetchReplies()
+      const response = await fetch('/api/trade', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          ticker: post.ticker,
+          side: side,
+          qty: quantity
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to place trade')
+      }
+
+      const data = await response.json()
+      setToast(`✅ ${data.message}`)
+      setCopyTradeModal(null)
+
+      // Trigger portfolio refresh
+      setPortfolioRefreshTrigger(prev => prev + 1)
     } catch (err) {
-      console.error('Error posting reply:', err)
-      setToast('Failed to post reply')
+      setToast(`❌ ${err.message}`)
+      setCopyTradeModal(prev => ({ ...prev, loading: false }))
     }
   }
 
@@ -599,6 +668,8 @@ const FeedScreen = ({ onUserClick }) => {
                   💬 {repliesCount}
                 </button>
                 <button
+                  onClick={() => handleCopyTrade(post)}
+                  type="button"
                   className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 rounded-lg transition text-sm"
                 >
                   Copy Trade
@@ -676,6 +747,15 @@ const FeedScreen = ({ onUserClick }) => {
       )}
 
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
+
+      {copyTradeModal && (
+        <CopyTradeModal
+          modalData={copyTradeModal}
+          onConfirm={handleConfirmCopyTrade}
+          onCancel={() => setCopyTradeModal(null)}
+          onQuantityChange={(quantity) => setCopyTradeModal(prev => ({ ...prev, quantity }))}
+        />
+      )}
     </div>
   )
 }
