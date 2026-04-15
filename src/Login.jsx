@@ -44,6 +44,21 @@ const Login = ({ onAuthSuccess }) => {
       if (error) throw error
 
       if (data.user) {
+        // Auto-create profile
+        await supabase
+          .from('profiles')
+          .insert([{
+            user_id: data.user.id,
+            username: email.split('@')[0],
+            bio: '',
+            followers: 0,
+            following: 0,
+            created_at: new Date().toISOString()
+          }])
+          .then(({ error: profileError }) => {
+            if (profileError) console.error('Profile creation error:', profileError)
+          })
+
         setError('Check your email for the confirmation link!')
       }
     } catch (error) {

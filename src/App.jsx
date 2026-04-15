@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react'
 import './App.css'
 import { supabase } from './supabaseClient'
 import Login from './Login'
+import Profile from './Profile'
 
 // Toast notification component
 const Toast = ({ message, onClose }) => {
-  useState(() => {
+  useEffect(() => {
     const timer = setTimeout(onClose, 3000)
     return () => clearTimeout(timer)
-  }, [])
+  }, [onClose])
 
   return (
     <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 animate-in fade-in">
@@ -133,17 +134,92 @@ const ProgressBar = ({ value, color = 'bg-emerald-500' }) => (
 )
 
 // Portfolio Screen
-const PortfolioScreen = ({ onLogout }) => {
-  const holdings = [
-    { ticker: 'AAPL', price: 182.45, change: 5.2, shares: 12 },
-    { ticker: 'NVDA', price: 892.30, change: 12.8, shares: 5 },
-    { ticker: 'TSLA', price: 245.67, change: -2.1, shares: 8 }
-  ]
-  
+const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
+  const [portfolio, setPortfolio] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    fetchPortfolio()
+  }, [refreshTrigger])
+
+  const fetchPortfolio = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      const response = await fetch('/api/portfolio')
+      if (!response.ok) {
+        throw new Error(`Failed to fetch portfolio: ${response.status}`)
+      }
+
+      const data = await response.json()
+      setPortfolio(data)
+    } catch (err) {
+      console.error('Error fetching portfolio:', err)
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-end">
+          <button
+            onClick={onLogout}
+            className="bg-red-500 hover:bg-red-600 text-white text-sm px-4 py-2 rounded-lg transition font-semibold"
+          >
+            Logout
+          </button>
+        </div>
+        <div className="text-center py-8 text-gray-400">
+          <div className="w-8 h-8 border-4 border-[#2a2a2a] border-t-emerald-500 rounded-full animate-spin mx-auto mb-4"></div>
+          Loading portfolio...
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-end">
+          <button
+            onClick={onLogout}
+            className="bg-red-500 hover:bg-red-600 text-white text-sm px-4 py-2 rounded-lg transition font-semibold"
+          >
+            Logout
+          </button>
+        </div>
+        <div className="bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-2xl p-6">
+          <p className="text-red-400 font-semibold mb-2">Portfolio Error</p>
+          <p className="text-red-300 text-sm">{error}</p>
+          <button
+            onClick={fetchPortfolio}
+            className="mt-4 bg-red-500 hover:bg-red-600 text-white text-sm px-4 py-2 rounded-lg transition font-semibold"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const account = portfolio?.account
+  const positions = portfolio?.positions || []
+
   return (
     <div className="space-y-6">
       {/* Logout Button */}
-      <div className="flex justify-end">
+      <div className="flex justify-between items-center">
+        <button
+          onClick={fetchPortfolio}
+          className="bg-gray-600 hover:bg-gray-700 text-white text-sm px-4 py-2 rounded-lg transition font-semibold"
+        >
+          🔄 Refresh
+        </button>
         <button
           onClick={onLogout}
           className="bg-red-500 hover:bg-red-600 text-white text-sm px-4 py-2 rounded-lg transition font-semibold"
@@ -151,133 +227,451 @@ const PortfolioScreen = ({ onLogout }) => {
           Logout
         </button>
       </div>
+
+      {/* Account Overview */}
       <div className="bg-[#1a1a1a] rounded-2xl p-6 border border-[#2a2a2a]">
         <p className="text-gray-400 text-sm mb-2">Total Portfolio Value</p>
-        <div className="text-5xl font-bold text-white mb-2">$47,823</div>
-        <div className="flex items-center gap-2">
-          <span className="text-emerald-400 text-lg font-semibold">+$3,422</span>
-          <span className="text-emerald-400 text-lg">(7.7%)</span>
-          <span className="text-emerald-400">📈</span>
+        <div className="text-5xl font-bold text-white mb-2">
+          ${account?.equity?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+        </div>
+        <div className="grid grid-cols-2 gap-4 mt-4">
+          <div>
+            <p className="text-gray-400 text-xs">Cash Balance</p>
+            <p className="text-white font-semibold">
+              ${account?.cash?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+            </p>
+          </div>
+          <div>
+            <p className="text-gray-400 text-xs">Buying Power</p>
+            <p className="text-emerald-400 font-semibold">
+              ${account?.buyingPower?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+            </p>
+          </div>
         </div>
         <div className="mt-6 h-20">
           <LineChart />
         </div>
       </div>
-      
-      {/* Holdings */}
+
+      {/* Positions */}
       <div>
-        <h3 className="text-white font-semibold text-lg mb-4">Your Holdings</h3>
-        <div className="space-y-1">
-          {holdings.map((holding) => (
-            <div key={holding.ticker} className="bg-[#1a1a1a] rounded-xl p-4 border border-[#2a2a2a] flex items-center justify-between hover:bg-[#222] transition">
-              <div className="flex-1">
-                <div className="font-bold text-white text-base">{holding.ticker}</div>
-                <div className="text-gray-500 text-xs">{holding.shares} shares</div>
-              </div>
-              <div className="text-right">
-                <div className="text-white font-semibold">${holding.price.toFixed(2)}</div>
-                <div className={`text-sm font-semibold ${holding.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {holding.change >= 0 ? '+' : ''}{holding.change.toFixed(1)}%
+        <h3 className="text-white font-semibold text-lg mb-4">Your Positions</h3>
+        {positions.length === 0 ? (
+          <div className="bg-[#1a1a1a] rounded-2xl p-8 border border-[#2a2a2a] text-center">
+            <div className="text-gray-400 mb-2">No positions yet</div>
+            <div className="text-gray-500 text-sm">Start trading to see your positions here</div>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {positions.map((position) => (
+              <div key={position.symbol} className="bg-[#1a1a1a] rounded-xl p-4 border border-[#2a2a2a] flex items-center justify-between hover:bg-[#222] transition">
+                <div className="flex-1">
+                  <div className="font-bold text-white text-base">{position.symbol}</div>
+                  <div className="text-gray-500 text-xs">{position.qty} shares @ ${position.avgEntryPrice?.toFixed(2)}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-white font-semibold">${position.currentPrice?.toFixed(2)}</div>
+                  <div className="text-gray-400 text-xs">Market Value: ${position.marketValue?.toFixed(2)}</div>
+                  <div className={`text-sm font-semibold ${position.unrealizedPl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {position.unrealizedPl >= 0 ? '+' : ''}${position.unrealizedPl?.toFixed(2)} ({position.unrealizedPlpc >= 0 ? '+' : ''}{(position.unrealizedPlpc * 100)?.toFixed(2)}%)
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
 // Feed Screen
-const FeedScreen = () => {
-  const [copyTradeModal, setCopyTradeModal] = useState(null)
+const FeedScreen = ({ onUserClick }) => {
+  const [posts, setPosts] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [postTradeModal, setPostTradeModal] = useState(false)
+  const [user, setUser] = useState(null)
+  const [userLikes, setUserLikes] = useState({})
+  const [replies, setReplies] = useState({})
+  const [expandedReplies, setExpandedReplies] = useState({})
+  const [replyingTo, setReplyingTo] = useState(null)
+  const [replyContent, setReplyContent] = useState('')
   const [toast, setToast] = useState(null)
 
-  const posts = [
-    {
-      id: 1,
-      name: 'Sarah Chen',
-      username: '@sarahchen',
-      returnPercentage: 24.5,
-      text: 'Just caught a breakout on NVDA. Strong momentum building 🚀',
-      tags: ['NVDA', 'Tech'],
-      bgColor: 'bg-purple-500'
-    },
-    {
-      id: 2,
-      name: 'Alex Rodriguez',
-      username: '@alexrodriguez',
-      returnPercentage: 18.3,
-      text: 'Healthcare sector looking bullish. Adding to GOOGL position',
-      tags: ['GOOGL', 'Healthcare'],
-      bgColor: 'bg-blue-500'
-    },
-    {
-      id: 3,
-      name: 'Jordan Park',
-      username: '@jordanpark',
-      returnPercentage: 31.7,
-      text: 'TSLA consolidation phase complete. Expecting move up ⚡',
-      tags: ['TSLA', 'EV'],
-      bgColor: 'bg-pink-500'
+  useEffect(() => {
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      setUser(user)
     }
-  ]
+    getUser()
+  }, [])
 
-  const handleCopyTrade = (post) => {
-    setCopyTradeModal({ trader: post.name, post })
+  useEffect(() => {
+    fetchPosts()
+    
+    const subscription = supabase
+      .channel('posts')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, (payload) => {
+        fetchPosts()
+      })
+      .subscribe()
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!user) return
+    
+    const likesSubscription = supabase
+      .channel('likes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'likes' }, (payload) => {
+        fetchPosts()
+        fetchUserLikes()
+      })
+      .subscribe()
+
+    const repliesSubscription = supabase
+      .channel('replies')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'replies' }, (payload) => {
+        fetchReplies()
+      })
+      .subscribe()
+
+    return () => {
+      likesSubscription.unsubscribe()
+      repliesSubscription.unsubscribe()
+    }
+  }, [user])
+
+  const fetchPosts = async () => {
+    try {
+      setLoading(true)
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .order('created_at', { ascending: false })
+      
+      if (error) throw error
+      setPosts(data || [])
+      if (user) fetchUserLikes()
+    } catch (err) {
+      console.error('Error fetching posts:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleConfirmCopy = () => {
-    setToast('Trade copied successfully!')
-    setCopyTradeModal(null)
+  const fetchUserLikes = async () => {
+    if (!user) return
+    try {
+      const { data, error } = await supabase
+        .from('likes')
+        .select('post_id')
+        .eq('user_id', user.id)
+      
+      if (error) throw error
+      const likes = {}
+      data?.forEach(like => {
+        likes[like.post_id] = true
+      })
+      setUserLikes(likes)
+    } catch (err) {
+      console.error('Error fetching user likes:', err)
+    }
   }
-  
+
+  const fetchReplies = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('replies')
+        .select('*')
+        .order('created_at', { ascending: true })
+      
+      if (error) throw error
+      const repliesByPost = {}
+      data?.forEach(reply => {
+        if (!repliesByPost[reply.post_id]) repliesByPost[reply.post_id] = []
+        repliesByPost[reply.post_id].push(reply)
+      })
+      setReplies(repliesByPost)
+    } catch (err) {
+      console.error('Error fetching replies:', err)
+    }
+  }
+
+  const handlePostTrade = async (postData) => {
+    try {
+      if (!user) {
+        setToast('Please log in to post')
+        return
+      }
+
+      const { error } = await supabase.from('posts').insert([
+        {
+          user_id: user.id,
+          username: user.email,
+          ticker: postData.ticker,
+          signal: postData.signal,
+          content: postData.content,
+          created_at: new Date().toISOString(),
+          likes: 0
+        }
+      ])
+
+      if (error) throw error
+      setToast('Trade posted successfully!')
+      setPostTradeModal(false)
+      fetchPosts()
+    } catch (err) {
+      console.error('Error posting trade:', err)
+      setToast('Failed to post trade')
+    }
+  }
+
+  const handleLike = async (postId) => {
+    if (!user) {
+      setToast('Please log in to like')
+      return
+    }
+
+    try {
+      const isLiked = userLikes[postId]
+      
+      if (isLiked) {
+        // Unlike
+        const { error } = await supabase
+          .from('likes')
+          .delete()
+          .eq('post_id', postId)
+          .eq('user_id', user.id)
+        
+        if (error) throw error
+        
+        const newLikes = { ...userLikes }
+        delete newLikes[postId]
+        setUserLikes(newLikes)
+      } else {
+        // Like
+        const { error } = await supabase
+          .from('likes')
+          .insert([{ post_id: postId, user_id: user.id }])
+        
+        if (error) throw error
+        setUserLikes({ ...userLikes, [postId]: true })
+      }
+    } catch (err) {
+      console.error('Error toggling like:', err)
+    }
+  }
+
+  const handleReply = async (postId) => {
+    if (!user) {
+      setToast('Please log in to reply')
+      return
+    }
+
+    if (!replyContent.trim()) {
+      setToast('Reply cannot be empty')
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('replies')
+        .insert([{
+          post_id: postId,
+          user_id: user.id,
+          username: user.email,
+          content: replyContent,
+          created_at: new Date().toISOString()
+        }])
+
+      if (error) throw error
+      setReplyContent('')
+      setReplyingTo(null)
+      setToast('Reply posted!')
+      fetchReplies()
+    } catch (err) {
+      console.error('Error posting reply:', err)
+      setToast('Failed to post reply')
+    }
+  }
+
+  const formatTimeAgo = (timestamp) => {
+    const now = new Date()
+    const postTime = new Date(timestamp)
+    const diffMs = now - postTime
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMs / 3600000)
+    const diffDays = Math.floor(diffMs / 86400000)
+
+    if (diffMins < 1) return 'just now'
+    if (diffMins < 60) return `${diffMins}m ago`
+    if (diffHours < 24) return `${diffHours}h ago`
+    return `${diffDays}d ago`
+  }
+
+  const getSignalColor = (signal) => {
+    switch (signal) {
+      case 'BUY':
+        return { bg: 'bg-emerald-500 bg-opacity-20', border: 'border-emerald-500', text: 'text-emerald-400', badge: 'bg-emerald-500' }
+      case 'SELL':
+        return { bg: 'bg-red-500 bg-opacity-20', border: 'border-red-500', text: 'text-red-400', badge: 'bg-red-500' }
+      case 'HOLD':
+        return { bg: 'bg-yellow-500 bg-opacity-20', border: 'border-yellow-500', text: 'text-yellow-400', badge: 'bg-yellow-500' }
+      default:
+        return { bg: 'bg-gray-500 bg-opacity-20', border: 'border-gray-500', text: 'text-gray-400', badge: 'bg-gray-500' }
+    }
+  }
+
   return (
-    <div className="space-y-3">
-      {posts.map((post) => (
-        <div key={post.id} className="bg-[#1a1a1a] rounded-2xl p-4 border border-[#2a2a2a] space-y-3">
-          {/* Header with avatar and return badge */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Avatar name={post.name} bgColor={post.bgColor} />
-              <div>
-                <div className="font-semibold text-white text-sm">{post.name}</div>
-                <div className="text-gray-500 text-xs">{post.username}</div>
-              </div>
-            </div>
-            <div className="bg-emerald-500 bg-opacity-20 px-3 py-1 rounded-full border border-emerald-500 border-opacity-30">
-              <span className="text-emerald-400 text-xs font-bold">+{post.returnPercentage}%</span>
-            </div>
-          </div>
-          
-          {/* Post text */}
-          <p className="text-gray-200 text-sm">{post.text}</p>
-          
-          {/* Stock tags */}
-          <div className="flex gap-2 flex-wrap">
-            {post.tags.map((tag) => (
-              <span key={tag} className="bg-blue-500 bg-opacity-20 text-blue-300 text-xs px-2 py-1 rounded-full border border-blue-500 border-opacity-30 font-medium">
-                ${tag}
-              </span>
-            ))}
-          </div>
-          
-          {/* Copy Trade button */}
-          <button
-            onClick={() => handleCopyTrade(post)}
-            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2.5 rounded-lg transition text-sm"
-          >
-            Copy Trade
-          </button>
-        </div>
-      ))}
+    <div className="space-y-4">
+      {/* Post Trade Button */}
+      <button
+        onClick={() => setPostTradeModal(true)}
+        className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold py-3 rounded-lg transition"
+      >
+        Post Trade
+      </button>
 
-      {copyTradeModal && (
-        <CopyTradeModal
-          trader={copyTradeModal.trader}
-          post={copyTradeModal.post}
-          onConfirm={handleConfirmCopy}
-          onCancel={() => setCopyTradeModal(null)}
+      {/* Posts */}
+      {loading ? (
+        <div className="text-center py-8 text-gray-400">Loading trades...</div>
+      ) : posts.length === 0 ? (
+        <div className="bg-[#1a1a1a] rounded-2xl p-8 border border-[#2a2a2a] text-center">
+          <div className="text-gray-400 mb-2">No trades posted yet.</div>
+          <div className="text-gray-500 text-sm">Be the first to share a signal!</div>
+        </div>
+      ) : (
+        posts.map((post) => {
+          const signalColor = getSignalColor(post.signal)
+          const isLiked = userLikes[post.id]
+          const postReplies = replies[post.id] || []
+          const repliesCount = postReplies.length
+          const isExpanded = expandedReplies[post.id]
+          
+          return (
+            <div key={post.id} className="bg-[#1a1a1a] rounded-2xl p-4 border border-[#2a2a2a] space-y-3">
+              {/* Header with username and time */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <button
+                    onClick={() => onUserClick(post.user_id)}
+                    className="font-semibold text-white text-sm hover:text-emerald-400 transition"
+                  >
+                    {post.username}
+                  </button>
+                  <div className="text-gray-500 text-xs">{formatTimeAgo(post.created_at)}</div>
+                </div>
+                <span className={`px-3 py-1 rounded-full text-xs font-bold border ${signalColor.bg} ${signalColor.text} border-opacity-30`}>
+                  {post.signal}
+                </span>
+              </div>
+
+              {/* Post content */}
+              <p className="text-gray-200 text-sm">{post.content}</p>
+
+              {/* Ticker tag */}
+              <div className="flex gap-2 flex-wrap">
+                <span className="bg-blue-500 bg-opacity-20 text-blue-300 text-xs px-2 py-1 rounded-full border border-blue-500 border-opacity-30 font-medium">
+                  ${post.ticker}
+                </span>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => handleLike(post.id)}
+                  className={`flex-1 text-sm py-2 rounded-lg transition border ${
+                    isLiked
+                      ? 'bg-emerald-500 bg-opacity-20 border-emerald-500 border-opacity-30 text-emerald-400 font-semibold'
+                      : 'bg-[#0f0f0f] hover:bg-[#1a1a1a] text-gray-300 border-[#2a2a2a]'
+                  }`}
+                >
+                  👍 {post.likes || 0}
+                </button>
+                <button
+                  onClick={() => setReplyingTo(replyingTo === post.id ? null : post.id)}
+                  className="flex-1 bg-[#0f0f0f] hover:bg-[#1a1a1a] text-gray-300 text-sm py-2 rounded-lg transition border border-[#2a2a2a]"
+                >
+                  💬 {repliesCount}
+                </button>
+                <button
+                  className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 rounded-lg transition text-sm"
+                >
+                  Copy Trade
+                </button>
+              </div>
+
+              {/* Reply Input */}
+              {replyingTo === post.id && (
+                <div className="space-y-2 pt-2 border-t border-[#2a2a2a]">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={replyContent}
+                      onChange={(e) => setReplyContent(e.target.value)}
+                      placeholder="Write a reply..."
+                      className="flex-1 bg-[#0f0f0f] border border-[#2a2a2a] text-white px-3 py-2 rounded-lg text-sm hover:border-[#3a3a3a] transition"
+                      onKeyPress={(e) => e.key === 'Enter' && handleReply(post.id)}
+                    />
+                    <button
+                      onClick={() => handleReply(post.id)}
+                      className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-2 rounded-lg transition text-sm font-semibold"
+                    >
+                      Send
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Replies */}
+              {repliesCount > 0 && (
+                <div className="pt-2 border-t border-[#2a2a2a] space-y-2">
+                  {!isExpanded && (
+                    <button
+                      onClick={() => setExpandedReplies({ ...expandedReplies, [post.id]: true })}
+                      className="text-emerald-400 text-xs font-semibold hover:text-emerald-300 transition"
+                    >
+                      View {repliesCount} {repliesCount === 1 ? 'reply' : 'replies'}
+                    </button>
+                  )}
+                  
+                  {isExpanded && (
+                    <>
+                      {postReplies.map((reply) => (
+                        <div key={reply.id} className="bg-[#0f0f0f] rounded-lg p-3 border border-[#2a2a2a] space-y-1">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <div className="font-semibold text-white text-xs">{reply.username}</div>
+                              <div className="text-gray-500 text-xs">{formatTimeAgo(reply.created_at)}</div>
+                            </div>
+                          </div>
+                          <p className="text-gray-300 text-sm">{reply.content}</p>
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => setExpandedReplies({ ...expandedReplies, [post.id]: false })}
+                        className="text-gray-500 text-xs hover:text-gray-400 transition"
+                      >
+                        Hide replies
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })
+      )}
+
+      {/* Post Trade Modal */}
+      {postTradeModal && (
+        <PostTradeModal
+          onPost={handlePostTrade}
+          onCancel={() => setPostTradeModal(false)}
         />
       )}
 
@@ -286,30 +680,128 @@ const FeedScreen = () => {
   )
 }
 
+
+
+// Post Trade Modal Component
+const PostTradeModal = ({ onPost, onCancel }) => {
+  const [ticker, setTicker] = useState('')
+  const [signal, setSignal] = useState('BUY')
+  const [content, setContent] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!ticker || !content) {
+      alert('Please fill in all fields')
+      return
+    }
+    setLoading(true)
+    await onPost({ ticker: ticker.toUpperCase(), signal, content })
+    setLoading(false)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+      <div className="bg-[#0f0f0f] rounded-2xl border border-[#2a2a2a] p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-white font-bold text-lg">Post Trade</h2>
+          <button
+            onClick={onCancel}
+            className="text-gray-400 hover:text-white text-xl"
+          >
+            ✕
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Ticker Input */}
+          <div>
+            <label className="text-white text-sm font-semibold block mb-2">Ticker</label>
+            <input
+              type="text"
+              value={ticker}
+              onChange={(e) => setTicker(e.target.value)}
+              placeholder="e.g., NVDA, AAPL, SPY"
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition"
+            />
+          </div>
+
+          {/* Signal Dropdown */}
+          <div>
+            <label className="text-white text-sm font-semibold block mb-2">Signal</label>
+            <select
+              value={signal}
+              onChange={(e) => setSignal(e.target.value)}
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition appearance-none cursor-pointer"
+            >
+              <option value="BUY">BUY</option>
+              <option value="SELL">SELL</option>
+              <option value="HOLD">HOLD</option>
+            </select>
+          </div>
+
+          {/* Content Textarea */}
+          <div>
+            <label className="text-white text-sm font-semibold block mb-2">Your Reasoning</label>
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="Share your analysis and trading reasoning..."
+              rows="4"
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition resize-none"
+            />
+          </div>
+
+          {/* Buttons */}
+          <div className="flex gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="flex-1 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white font-semibold py-2.5 rounded-lg transition border border-[#2a2a2a]"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg transition"
+            >
+              {loading ? 'Posting...' : 'Post Trade'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+
 // AI Trader Screen
-const AITraderScreen = () => {
-  const [selectedTicker, setSelectedTicker] = useState('AAPL')
+const AITraderScreen = ({ onTradeSuccess }) => {
+  const [tickerInput, setTickerInput] = useState('AAPL')
   const [timeframe, setTimeframe] = useState('1h')
   const [risk, setRisk] = useState(50)
   const [signal, setSignal] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  
-  const tickers = ['AAPL', 'NVDA', 'TSLA', 'AMD', 'GOOGL', 'MSFT']
-  
+  const [tradeLoading, setTradeLoading] = useState(false)
+  const [toast, setToast] = useState(null)
+
+  const popularTickers = ['NVDA', 'AAPL', 'TSLA', 'MSFT', 'META', 'AMZN', 'SPY', 'AMD', 'GOOGL', 'BTC-USD', 'ETH-USD', 'NFLX']
+
   const handleRunSignal = async () => {
     setLoading(true)
     setError(null)
     setSignal(null)
-    
+
     try {
-      const response = await fetch('http://localhost:3001/api/signal', {
+      const response = await fetch('/api/signal', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          ticker: selectedTicker,
+          ticker: tickerInput,
           timeframe,
           risk
         })
@@ -329,6 +821,46 @@ const AITraderScreen = () => {
     }
   }
 
+  const handlePlaceTrade = async () => {
+    if (!signal || signal.signal !== 'BUY') return
+
+    setTradeLoading(true)
+    setToast(null)
+
+    try {
+      const response = await fetch('/api/trade', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          symbol: tickerInput,
+          qty: 1,
+          side: 'buy'
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to place trade')
+      }
+
+      const data = await response.json()
+      setToast(`✅ ${data.message}`)
+      console.log('Trade placed:', data)
+      
+      // Trigger portfolio refresh
+      if (onTradeSuccess) {
+        onTradeSuccess()
+      }
+    } catch (err) {
+      setToast(`❌ ${err.message}`)
+      console.error('Trade error:', err)
+    } finally {
+      setTradeLoading(false)
+    }
+  }
+
   const signalColors = {
     BUY: { bg: 'bg-emerald-500 bg-opacity-20', border: 'border-emerald-500 border-opacity-40', text: 'text-emerald-400', badge: 'bg-emerald-500' },
     SELL: { bg: 'bg-red-500 bg-opacity-20', border: 'border-red-500 border-opacity-40', text: 'text-red-400', badge: 'bg-red-500' },
@@ -342,16 +874,20 @@ const AITraderScreen = () => {
       {/* Stock Picker */}
       <div className="space-y-3">
         <h3 className="text-white font-semibold text-base">Stock Picker</h3>
-        <div className="grid grid-cols-3 gap-2">
-          {tickers.map((ticker) => (
+        <input
+          type="text"
+          value={tickerInput}
+          onChange={(e) => setTickerInput(e.target.value)}
+          onKeyPress={(e) => e.key === 'Enter' && handleRunSignal()}
+          placeholder="Enter ticker symbol (e.g., NVDA, AAPL, SPY)"
+          className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition"
+        />
+        <div className="flex flex-wrap gap-2">
+          {popularTickers.map((ticker) => (
             <button
               key={ticker}
-              onClick={() => setSelectedTicker(ticker)}
-              className={`py-2 px-3 rounded-full font-semibold text-sm transition ${
-                selectedTicker === ticker
-                  ? 'bg-emerald-500 text-white'
-                  : 'bg-[#1a1a1a] text-gray-300 border border-[#2a2a2a] hover:border-[#3a3a3a]'
-              }`}
+              onClick={() => setTickerInput(ticker)}
+              className="py-1.5 px-3 rounded-full font-semibold text-xs bg-[#1a1a1a] text-gray-300 border border-[#2a2a2a] hover:border-[#3a3a3a] transition"
             >
               {ticker}
             </button>
@@ -421,7 +957,7 @@ const AITraderScreen = () => {
             
             {/* Ticker and Timeframe */}
             <div className="text-center">
-              <div className="text-3xl font-bold text-white">{selectedTicker}</div>
+              <div className="text-3xl font-bold text-white">{tickerInput}</div>
               <div className="text-xs text-gray-400">{timeframe} timeframe</div>
             </div>
 
@@ -459,9 +995,28 @@ const AITraderScreen = () => {
             </div>
 
             {/* Action Button */}
-            <button className={`w-full ${signalColor.badge} hover:opacity-90 text-white font-semibold py-2.5 rounded-lg transition`}>
-              {signal.signal === 'SELL' ? 'Sell Now' : 'Buy Now'}
-            </button>
+            {signal.signal === 'BUY' ? (
+              <button
+                onClick={handlePlaceTrade}
+                disabled={tradeLoading}
+                className={`w-full ${signalColor.badge} hover:opacity-90 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg transition`}
+              >
+                {tradeLoading ? 'Placing Order...' : 'Buy with Alpaca'}
+              </button>
+            ) : (
+              <button className={`w-full ${signalColor.badge} hover:opacity-90 text-white font-semibold py-2.5 rounded-lg transition opacity-50 cursor-not-allowed`}>
+                {signal.signal === 'SELL' ? 'Sell Signal' : 'Hold Signal'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 animate-in fade-in">
+          <div className="bg-emerald-500 text-white px-6 py-3 rounded-lg shadow-lg font-semibold">
+            {toast}
           </div>
         </div>
       )}
@@ -530,6 +1085,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('portfolio')
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [viewingProfileId, setViewingProfileId] = useState(null)
+  const [portfolioRefreshTrigger, setPortfolioRefreshTrigger] = useState(0)
 
   useEffect(() => {
     // Check for existing session
@@ -560,16 +1117,42 @@ export default function App() {
     await supabase.auth.signOut()
   }
 
+  const handleUserClick = (userId) => {
+    setViewingProfileId(userId)
+    setActiveTab('profile')
+  }
+
   const renderScreen = () => {
+    if (viewingProfileId) {
+      return (
+        <Profile
+          userId={viewingProfileId}
+          currentUser={user}
+          onBack={() => {
+            setViewingProfileId(null)
+            setActiveTab('feed')
+          }}
+        />
+      )
+    }
+
     switch (activeTab) {
       case 'portfolio':
-        return <PortfolioScreen onLogout={handleLogout} />
+        return <PortfolioScreen onLogout={handleLogout} refreshTrigger={portfolioRefreshTrigger} />
       case 'feed':
-        return <FeedScreen />
+        return <FeedScreen onUserClick={handleUserClick} />
       case 'ai':
-        return <AITraderScreen />
+        return <AITraderScreen onTradeSuccess={() => setPortfolioRefreshTrigger(prev => prev + 1)} />
       case 'funds':
         return <FundsScreen />
+      case 'profile':
+        return user ? (
+          <Profile
+            userId={user.id}
+            currentUser={user}
+            onBack={() => setActiveTab('portfolio')}
+          />
+        ) : null
       default:
         return <PortfolioScreen onLogout={handleLogout} />
     }
@@ -607,18 +1190,24 @@ export default function App() {
         </div>
         
         {/* Bottom Navigation */}
-        <div className="border-t border-[#2a2a2a] bg-[#0f0f0f] px-4 py-4 grid grid-cols-4 gap-2 sticky bottom-0">
+        <div className="border-t border-[#2a2a2a] bg-[#0f0f0f] px-4 py-4 grid grid-cols-5 gap-2 sticky bottom-0">
           {[
             { id: 'portfolio', label: 'Portfolio', icon: '📊' },
             { id: 'feed', label: 'Feed', icon: '📱' },
             { id: 'ai', label: 'AI Trader', icon: '🤖' },
-            { id: 'funds', label: 'Funds', icon: '💰' }
+            { id: 'funds', label: 'Funds', icon: '💰' },
+            { id: 'profile', label: 'Profile', icon: '👤' }
           ].map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                if (tab.id === 'profile') {
+                  setViewingProfileId(null)
+                }
+                setActiveTab(tab.id)
+              }}
               className={`flex flex-col items-center justify-center py-2 px-2 rounded-lg transition ${
-                activeTab === tab.id
+                activeTab === tab.id || (tab.id === 'profile' && viewingProfileId === user?.id)
                   ? 'bg-emerald-500 text-white'
                   : 'text-gray-400 hover:text-gray-200'
               }`}
@@ -632,3 +1221,4 @@ export default function App() {
     </div>
   )
 }
+
