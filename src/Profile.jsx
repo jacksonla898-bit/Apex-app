@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
+import { Heart, Settings, Users, Check, ArrowLeft } from 'lucide-react'
 
 const Profile = ({ userId, currentUser, onBack }) => {
   const [profile, setProfile] = useState(null)
@@ -290,7 +291,7 @@ const Profile = ({ userId, currentUser, onBack }) => {
       <div className="text-center py-8 text-gray-400">
         <div>Profile not found</div>
         <button onClick={onBack} className="text-emerald-400 text-sm mt-2 hover:text-emerald-300">
-          ← Back
+          <ArrowLeft className="w-4 h-4 inline mr-1" />Back
         </button>
       </div>
     )
@@ -303,7 +304,7 @@ const Profile = ({ userId, currentUser, onBack }) => {
         onClick={onBack}
         className="text-emerald-400 text-sm font-semibold hover:text-emerald-300 transition"
       >
-        ← Back
+        <ArrowLeft className="w-4 h-4 inline mr-1" />Back
       </button>
 
       {/* Profile Header */}
@@ -361,9 +362,9 @@ const Profile = ({ userId, currentUser, onBack }) => {
               ) : (
                 <button
                   onClick={() => setEditMode(true)}
-                  className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-1.5 rounded-lg text-sm transition font-semibold"
+                  className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-1.5 rounded-lg text-sm transition font-semibold flex items-center gap-1.5"
                 >
-                  Edit Profile
+                  <Settings className="w-4 h-4" /> Edit Profile
                 </button>
               )}
             </div>
@@ -385,11 +386,15 @@ const Profile = ({ userId, currentUser, onBack }) => {
         <div className="grid grid-cols-2 gap-4 pt-4 border-t border-[#2a2a2a]">
           <div className="text-center">
             <div className="text-2xl font-bold text-emerald-400">{followers}</div>
-            <div className="text-gray-500 text-sm">Followers</div>
+            <div className="text-gray-500 text-sm flex items-center justify-center gap-1">
+              <Users className="w-3.5 h-3.5" /> Followers
+            </div>
           </div>
           <div className="text-center">
             <div className="text-2xl font-bold text-emerald-400">{following}</div>
-            <div className="text-gray-500 text-sm">Following</div>
+            <div className="text-gray-500 text-sm flex items-center justify-center gap-1">
+              <Users className="w-3.5 h-3.5" /> Following
+            </div>
           </div>
         </div>
       </div>
@@ -426,13 +431,13 @@ const Profile = ({ userId, currentUser, onBack }) => {
 
                   <div className="flex gap-2 pt-2">
                     <button
-                      className={`flex-1 text-sm py-2 rounded-lg transition border ${
+                      className={`flex-1 text-sm py-2 rounded-lg transition border flex items-center justify-center gap-1.5 ${
                         isLiked
                           ? 'bg-emerald-500 bg-opacity-20 border-emerald-500 border-opacity-30 text-emerald-400 font-semibold'
                           : 'bg-[#0f0f0f] hover:bg-[#1a1a1a] text-gray-300 border-[#2a2a2a]'
                       }`}
                     >
-                      👍 {post.likes || 0}
+                      <Heart className={`w-4 h-4 ${isLiked ? 'fill-current' : ''}`} /> {post.likes || 0}
                     </button>
                   </div>
                 </div>
@@ -444,8 +449,9 @@ const Profile = ({ userId, currentUser, onBack }) => {
 
       {toast && (
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 animate-in fade-in">
-          <div className="bg-emerald-500 text-white px-6 py-3 rounded-lg shadow-lg font-semibold">
-            ✓ {toast}
+          <div className="bg-emerald-500 text-white px-6 py-3 rounded-lg shadow-lg font-semibold flex items-center gap-2">
+            <Check className="w-4 h-4" />
+            {toast}
           </div>
         </div>
       )}

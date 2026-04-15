@@ -3,6 +3,18 @@ import './App.css'
 import { supabase } from './supabaseClient'
 import Login from './Login'
 import Profile from './Profile'
+import FeedScreen from './Feed'
+import {
+  LayoutDashboard,
+  Rss,
+  Bot,
+  Briefcase,
+  User,
+  RefreshCw,
+  Check,
+  Zap,
+  X,
+} from 'lucide-react'
 
 // Toast notification component
 const Toast = ({ message, onClose }) => {
@@ -13,83 +25,9 @@ const Toast = ({ message, onClose }) => {
 
   return (
     <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 animate-in fade-in">
-      <div className="bg-emerald-500 text-white px-6 py-3 rounded-lg shadow-lg font-semibold">
-        ✓ {message}
-      </div>
-    </div>
-  )
-}
-
-// Modal component for Copy Trade
-const CopyTradeModal = ({ modalData, onConfirm, onCancel, onQuantityChange }) => {
-  const { post, quantity, loading } = modalData
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-end">
-      <div className="w-full max-w-2xl mx-auto bg-[#1a1a1a] rounded-t-2xl p-6 border-t border-[#2a2a2a]">
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xl font-bold text-white">Copy This Trade?</h3>
-          <button onClick={(e) => { e.preventDefault(); onCancel(); }} type="button" className="text-gray-400 hover:text-white text-2xl">
-            ✕
-          </button>
-        </div>
-
-        <div className="space-y-4 mb-6">
-          <div className="bg-[#0f0f0f] rounded-lg p-4 space-y-3">
-            <div className="space-y-1">
-              <p className="text-gray-400 text-sm">Trader</p>
-              <p className="text-white font-semibold">{post.username}</p>
-            </div>
-            <div className="border-t border-[#2a2a2a] pt-3 space-y-1">
-              <p className="text-gray-400 text-sm">Signal</p>
-              <p className={`font-semibold ${post.signal === 'BUY' ? 'text-emerald-400' : 'text-red-400'}`}>
-                {post.signal} {post.ticker}
-              </p>
-            </div>
-            <div className="border-t border-[#2a2a2a] pt-3">
-              <p className="text-gray-400 text-sm mb-1">Strategy</p>
-              <p className="text-gray-300 text-sm">{post.content}</p>
-            </div>
-          </div>
-
-          <div className="bg-[#0f0f0f] rounded-lg p-4">
-            <label className="block text-gray-400 text-sm mb-2">Quantity (Shares)</label>
-            <input
-              type="number"
-              min="1"
-              value={quantity}
-              onChange={(e) => onQuantityChange(parseInt(e.target.value) || 1)}
-              className="w-full bg-[#2a2a2a] border border-[#3a3a3a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-              disabled={loading}
-            />
-          </div>
-        </div>
-
-        <div className="flex gap-3">
-          <button
-            onClick={onCancel}
-            disabled={loading}
-            type="button"
-            className="flex-1 bg-[#2a2a2a] hover:bg-[#3a3a3a] disabled:opacity-50 text-white font-semibold py-3 rounded-lg transition"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={(e) => { e.preventDefault(); onConfirm(e); }}
-            disabled={loading}
-            type="button"
-            className="flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-semibold py-3 rounded-lg transition flex items-center justify-center"
-          >
-            {loading ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                Placing Trade...
-              </>
-            ) : (
-              'Confirm Copy'
-            )}
-          </button>
-        </div>
+      <div className="bg-emerald-500 text-white px-6 py-3 rounded-lg shadow-lg font-semibold flex items-center gap-2">
+        <Check className="w-4 h-4" />
+        {message}
       </div>
     </div>
   )
@@ -243,9 +181,9 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
       <div className="flex justify-between items-center">
         <button
           onClick={fetchPortfolio}
-          className="bg-gray-600 hover:bg-gray-700 text-white text-sm px-4 py-2 rounded-lg transition font-semibold"
+          className="bg-gray-600 hover:bg-gray-700 text-white text-sm px-4 py-2 rounded-lg transition font-semibold flex items-center gap-2"
         >
-          🔄 Refresh
+          <RefreshCw className="w-4 h-4" /> Refresh
         </button>
         <button
           onClick={onLogout}
@@ -312,456 +250,6 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
   )
 }
 
-// Feed Screen
-const FeedScreen = ({ onUserClick }) => {
-  const [posts, setPosts] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [postTradeModal, setPostTradeModal] = useState(false)
-  const [copyTradeModal, setCopyTradeModal] = useState(null)
-  const [user, setUser] = useState(null)
-  const [userLikes, setUserLikes] = useState({})
-  const [replies, setReplies] = useState({})
-  const [expandedReplies, setExpandedReplies] = useState({})
-  const [replyingTo, setReplyingTo] = useState(null)
-  const [replyContent, setReplyContent] = useState('')
-  const [toast, setToast] = useState(null)
-
-  useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      setUser(user)
-    }
-    getUser()
-  }, [])
-
-  useEffect(() => {
-    fetchPosts()
-    
-    const subscription = supabase
-      .channel('posts')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, (payload) => {
-        fetchPosts()
-      })
-      .subscribe()
-
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!user) return
-    
-    const likesSubscription = supabase
-      .channel('likes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'likes' }, (payload) => {
-        fetchPosts()
-        fetchUserLikes()
-      })
-      .subscribe()
-
-    const repliesSubscription = supabase
-      .channel('replies')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'replies' }, (payload) => {
-        fetchReplies()
-      })
-      .subscribe()
-
-    return () => {
-      likesSubscription.unsubscribe()
-      repliesSubscription.unsubscribe()
-    }
-  }, [user])
-
-  const fetchPosts = async () => {
-    try {
-      setLoading(true)
-      const { data, error } = await supabase
-        .from('posts')
-        .select('*')
-        .order('created_at', { ascending: false })
-      
-      if (error) throw error
-      
-      // Transform the data to include username from profile if needed, with fallback to email prefix
-      const transformedPosts = data?.map(post => ({
-        ...post,
-        username: post.username || 'Unknown'
-      })) || []
-      
-      setPosts(transformedPosts)
-      if (user) fetchUserLikes()
-    } catch (err) {
-      console.error('Error fetching posts:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const fetchUserLikes = async () => {
-    if (!user) return
-    try {
-      const { data, error } = await supabase
-        .from('likes')
-        .select('post_id')
-        .eq('user_id', user.id)
-      
-      if (error) throw error
-      const likes = {}
-      data?.forEach(like => {
-        likes[like.post_id] = true
-      })
-      setUserLikes(likes)
-    } catch (err) {
-      console.error('Error fetching user likes:', err)
-    }
-  }
-
-  const fetchReplies = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('replies')
-        .select(`
-          *,
-          profiles:user_id (
-            username
-          )
-        `)
-        .order('created_at', { ascending: true })
-      
-      if (error) throw error
-      
-      // Transform the data to include username from profile, with fallback to email prefix
-      const transformedReplies = data?.map(reply => ({
-        ...reply,
-        username: reply.profiles?.username || (reply.username?.split('@')[0] || 'Unknown')
-      })) || []
-      
-      const repliesByPost = {}
-      transformedReplies.forEach(reply => {
-        if (!repliesByPost[reply.post_id]) repliesByPost[reply.post_id] = []
-        repliesByPost[reply.post_id].push(reply)
-      })
-      setReplies(repliesByPost)
-    } catch (err) {
-      console.error('Error fetching replies:', err)
-    }
-  }
-
-  const handlePostTrade = async (postData) => {
-    try {
-      if (!user) {
-        setToast('Please log in to post')
-        return
-      }
-
-      // Get username from profile
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('username')
-        .eq('id', user.id)
-        .single()
-
-      let username = user.email?.split('@')[0] || 'Unknown' // fallback to email prefix
-      if (!profileError && profile?.username) {
-        username = profile.username
-      }
-
-      const { error } = await supabase.from('posts').insert([
-        {
-          user_id: user.id,
-          username: username,
-          ticker: postData.ticker,
-          signal: postData.signal,
-          content: postData.content,
-          created_at: new Date().toISOString(),
-          likes: 0
-        }
-      ])
-
-      if (error) throw error
-      setToast('Trade posted successfully!')
-      setPostTradeModal(false)
-      fetchPosts()
-    } catch (err) {
-      console.error('Error posting trade:', err)
-      setToast('Failed to post trade')
-    }
-  }
-
-  const handleLike = async (postId) => {
-    if (!user) {
-      setToast('Please log in to like')
-      return
-    }
-
-    try {
-      const isLiked = userLikes[postId]
-      
-      if (isLiked) {
-        // Unlike
-        const { error } = await supabase
-          .from('likes')
-          .delete()
-          .eq('post_id', postId)
-          .eq('user_id', user.id)
-        
-        if (error) throw error
-        
-        const newLikes = { ...userLikes }
-        delete newLikes[postId]
-        setUserLikes(newLikes)
-      } else {
-        // Like
-        const { error } = await supabase
-          .from('likes')
-          .insert([{ post_id: postId, user_id: user.id }])
-        
-        if (error) throw error
-        setUserLikes({ ...userLikes, [postId]: true })
-      }
-    } catch (err) {
-      console.error('Error toggling like:', err)
-    }
-  }
-
-  const handleCopyTrade = (post) => {
-    setCopyTradeModal({ post, quantity: 1, loading: false })
-  }
-
-  const handleConfirmCopyTrade = async (e) => {
-    if (e) e.preventDefault()
-    if (!copyTradeModal) return
-
-    setCopyTradeModal(prev => ({ ...prev, loading: true }))
-
-    try {
-      const { post, quantity } = copyTradeModal
-      const side = post.signal === 'BUY' ? 'buy' : 'sell'
-
-      const response = await fetch('/api/trade', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          ticker: post.ticker,
-          side: side,
-          qty: quantity
-        })
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to place trade')
-      }
-
-      const data = await response.json()
-      setToast(`✅ ${data.message}`)
-      setCopyTradeModal(null)
-
-      // Trigger portfolio refresh
-      setPortfolioRefreshTrigger(prev => prev + 1)
-    } catch (err) {
-      setToast(`❌ ${err.message}`)
-      setCopyTradeModal(prev => ({ ...prev, loading: false }))
-    }
-  }
-
-  const formatTimeAgo = (timestamp) => {
-    const now = new Date()
-    const postTime = new Date(timestamp)
-    const diffMs = now - postTime
-    const diffMins = Math.floor(diffMs / 60000)
-    const diffHours = Math.floor(diffMs / 3600000)
-    const diffDays = Math.floor(diffMs / 86400000)
-
-    if (diffMins < 1) return 'just now'
-    if (diffMins < 60) return `${diffMins}m ago`
-    if (diffHours < 24) return `${diffHours}h ago`
-    return `${diffDays}d ago`
-  }
-
-  const getSignalColor = (signal) => {
-    switch (signal) {
-      case 'BUY':
-        return { bg: 'bg-emerald-500 bg-opacity-20', border: 'border-emerald-500', text: 'text-emerald-400', badge: 'bg-emerald-500' }
-      case 'SELL':
-        return { bg: 'bg-red-500 bg-opacity-20', border: 'border-red-500', text: 'text-red-400', badge: 'bg-red-500' }
-      case 'HOLD':
-        return { bg: 'bg-yellow-500 bg-opacity-20', border: 'border-yellow-500', text: 'text-yellow-400', badge: 'bg-yellow-500' }
-      default:
-        return { bg: 'bg-gray-500 bg-opacity-20', border: 'border-gray-500', text: 'text-gray-400', badge: 'bg-gray-500' }
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* Post Trade Button */}
-      <button
-        onClick={() => setPostTradeModal(true)}
-        className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold py-3 rounded-lg transition"
-      >
-        Post Trade
-      </button>
-
-      {/* Posts */}
-      {loading ? (
-        <div className="text-center py-8 text-gray-400">Loading trades...</div>
-      ) : posts.length === 0 ? (
-        <div className="bg-[#1a1a1a] rounded-2xl p-8 border border-[#2a2a2a] text-center">
-          <div className="text-gray-400 mb-2">No trades posted yet.</div>
-          <div className="text-gray-500 text-sm">Be the first to share a signal!</div>
-        </div>
-      ) : (
-        posts.map((post) => {
-          const signalColor = getSignalColor(post.signal)
-          const isLiked = userLikes[post.id]
-          const postReplies = replies[post.id] || []
-          const repliesCount = postReplies.length
-          const isExpanded = expandedReplies[post.id]
-          
-          return (
-            <div key={post.id} className="bg-[#1a1a1a] rounded-2xl p-4 border border-[#2a2a2a] space-y-3">
-              {/* Header with username and time */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <button
-                    onClick={() => onUserClick(post.user_id)}
-                    className="font-semibold text-white text-sm hover:text-emerald-400 transition"
-                  >
-                    {post.username}
-                  </button>
-                  <div className="text-gray-500 text-xs">{formatTimeAgo(post.created_at)}</div>
-                </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-bold border ${signalColor.bg} ${signalColor.text} border-opacity-30`}>
-                  {post.signal}
-                </span>
-              </div>
-
-              {/* Post content */}
-              <p className="text-gray-200 text-sm">{post.content}</p>
-
-              {/* Ticker tag */}
-              <div className="flex gap-2 flex-wrap">
-                <span className="bg-blue-500 bg-opacity-20 text-blue-300 text-xs px-2 py-1 rounded-full border border-blue-500 border-opacity-30 font-medium">
-                  ${post.ticker}
-                </span>
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-2 pt-2">
-                <button
-                  onClick={() => handleLike(post.id)}
-                  className={`flex-1 text-sm py-2 rounded-lg transition border ${
-                    isLiked
-                      ? 'bg-emerald-500 bg-opacity-20 border-emerald-500 border-opacity-30 text-emerald-400 font-semibold'
-                      : 'bg-[#0f0f0f] hover:bg-[#1a1a1a] text-gray-300 border-[#2a2a2a]'
-                  }`}
-                >
-                  👍 {post.likes || 0}
-                </button>
-                <button
-                  onClick={() => setReplyingTo(replyingTo === post.id ? null : post.id)}
-                  className="flex-1 bg-[#0f0f0f] hover:bg-[#1a1a1a] text-gray-300 text-sm py-2 rounded-lg transition border border-[#2a2a2a]"
-                >
-                  💬 {repliesCount}
-                </button>
-                <button
-                  onClick={() => handleCopyTrade(post)}
-                  type="button"
-                  className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 rounded-lg transition text-sm"
-                >
-                  Copy Trade
-                </button>
-              </div>
-
-              {/* Reply Input */}
-              {replyingTo === post.id && (
-                <div className="space-y-2 pt-2 border-t border-[#2a2a2a]">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={replyContent}
-                      onChange={(e) => setReplyContent(e.target.value)}
-                      placeholder="Write a reply..."
-                      className="flex-1 bg-[#0f0f0f] border border-[#2a2a2a] text-white px-3 py-2 rounded-lg text-sm hover:border-[#3a3a3a] transition"
-                      onKeyPress={(e) => e.key === 'Enter' && handleReply(post.id)}
-                    />
-                    <button
-                      onClick={() => handleReply(post.id)}
-                      className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-2 rounded-lg transition text-sm font-semibold"
-                    >
-                      Send
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Replies */}
-              {repliesCount > 0 && (
-                <div className="pt-2 border-t border-[#2a2a2a] space-y-2">
-                  {!isExpanded && (
-                    <button
-                      onClick={() => setExpandedReplies({ ...expandedReplies, [post.id]: true })}
-                      className="text-emerald-400 text-xs font-semibold hover:text-emerald-300 transition"
-                    >
-                      View {repliesCount} {repliesCount === 1 ? 'reply' : 'replies'}
-                    </button>
-                  )}
-                  
-                  {isExpanded && (
-                    <>
-                      {postReplies.map((reply) => (
-                        <div key={reply.id} className="bg-[#0f0f0f] rounded-lg p-3 border border-[#2a2a2a] space-y-1">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <div className="font-semibold text-white text-xs">{reply.username}</div>
-                              <div className="text-gray-500 text-xs">{formatTimeAgo(reply.created_at)}</div>
-                            </div>
-                          </div>
-                          <p className="text-gray-300 text-sm">{reply.content}</p>
-                        </div>
-                      ))}
-                      <button
-                        onClick={() => setExpandedReplies({ ...expandedReplies, [post.id]: false })}
-                        className="text-gray-500 text-xs hover:text-gray-400 transition"
-                      >
-                        Hide replies
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          )
-        })
-      )}
-
-      {/* Post Trade Modal */}
-      {postTradeModal && (
-        <PostTradeModal
-          onPost={handlePostTrade}
-          onCancel={() => setPostTradeModal(false)}
-        />
-      )}
-
-      {toast && <Toast message={toast} onClose={() => setToast(null)} />}
-
-      {copyTradeModal && (
-        <CopyTradeModal
-          modalData={copyTradeModal}
-          onConfirm={handleConfirmCopyTrade}
-          onCancel={() => setCopyTradeModal(null)}
-          onQuantityChange={(quantity) => setCopyTradeModal(prev => ({ ...prev, quantity }))}
-        />
-      )}
-    </div>
-  )
-}
-
-
-
 // Post Trade Modal Component
 const PostTradeModal = ({ onPost, onCancel }) => {
   const [ticker, setTicker] = useState('')
@@ -787,9 +275,9 @@ const PostTradeModal = ({ onPost, onCancel }) => {
           <h2 className="text-white font-bold text-lg">Post Trade</h2>
           <button
             onClick={onCancel}
-            className="text-gray-400 hover:text-white text-xl"
+            className="text-gray-400 hover:text-white"
           >
-            ✕
+            <X className="w-5 h-5" />
           </button>
         </div>
 
@@ -926,7 +414,7 @@ const AITraderScreen = ({ onTradeSuccess }) => {
       }
 
       const data = await response.json()
-      setToast(`✅ ${data.message}`)
+      setToast(data.message)
       console.log('Trade placed:', data)
       
       // Trigger portfolio refresh
@@ -934,7 +422,7 @@ const AITraderScreen = ({ onTradeSuccess }) => {
         onTradeSuccess()
       }
     } catch (err) {
-      setToast(`❌ ${err.message}`)
+      setToast(err.message)
       console.error('Trade error:', err)
     } finally {
       setTradeLoading(false)
@@ -1009,8 +497,9 @@ const AITraderScreen = ({ onTradeSuccess }) => {
       <button
         onClick={handleRunSignal}
         disabled={loading}
-        className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold py-3 rounded-lg transition"
+        className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold py-3 rounded-lg transition flex items-center justify-center gap-2"
       >
+        <Zap className="w-5 h-5" />
         {loading ? 'Analyzing...' : 'Run Signal'}
       </button>
 
@@ -1220,7 +709,7 @@ export default function App() {
       case 'portfolio':
         return <PortfolioScreen onLogout={handleLogout} refreshTrigger={portfolioRefreshTrigger} />
       case 'feed':
-        return <FeedScreen onUserClick={handleUserClick} />
+        return <FeedScreen onUserClick={handleUserClick} setPortfolioRefreshTrigger={setPortfolioRefreshTrigger} />
       case 'ai':
         return <AITraderScreen onTradeSuccess={() => setPortfolioRefreshTrigger(prev => prev + 1)} />
       case 'funds':
@@ -1272,11 +761,11 @@ export default function App() {
         {/* Bottom Navigation */}
         <div className="border-t border-[#2a2a2a] bg-[#0f0f0f] px-4 py-4 grid grid-cols-5 gap-2 sticky bottom-0">
           {[
-            { id: 'portfolio', label: 'Portfolio', icon: '📊' },
-            { id: 'feed', label: 'Feed', icon: '📱' },
-            { id: 'ai', label: 'AI Trader', icon: '🤖' },
-            { id: 'funds', label: 'Funds', icon: '💰' },
-            { id: 'profile', label: 'Profile', icon: '👤' }
+            { id: 'portfolio', label: 'Portfolio', Icon: LayoutDashboard },
+            { id: 'feed', label: 'Feed', Icon: Rss },
+            { id: 'ai', label: 'AI Trader', Icon: Bot },
+            { id: 'funds', label: 'Funds', Icon: Briefcase },
+            { id: 'profile', label: 'Profile', Icon: User }
           ].map((tab) => (
             <button
               key={tab.id}
@@ -1292,7 +781,7 @@ export default function App() {
                   : 'text-gray-400 hover:text-gray-200'
               }`}
             >
-              <div className="text-xl mb-1">{tab.icon}</div>
+              <tab.Icon className="w-5 h-5 mb-1" />
               <div className="text-xs font-semibold">{tab.label}</div>
             </button>
           ))}
