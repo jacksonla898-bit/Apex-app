@@ -157,6 +157,11 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
 
       if (tradesErr) {
         console.error('Trades fetch error:', tradesErr.message, tradesErr.code, tradesErr.hint, tradesErr.details)
+        // If the trades table doesn't exist yet (migration not applied), show empty portfolio
+        if (tradesErr.code === '42P01' || tradesErr.message?.includes('does not exist')) {
+          setPositions([])
+          return
+        }
         throw new Error(tradesErr.message)
       }
 
@@ -599,9 +604,14 @@ export default function App() {
   useEffect(() => {
     // Check for existing session
     const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      setUser(user)
-      setLoading(false)
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        setUser(user)
+      } catch {
+        setUser(null)
+      } finally {
+        setLoading(false)
+      }
     }
 
     checkUser()
