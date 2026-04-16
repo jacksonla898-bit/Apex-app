@@ -98,36 +98,6 @@ const ProgressBar = ({ value, color = 'bg-emerald-500' }) => (
   </div>
 )
 
-// Compute positions from a flat list of trade rows.
-// Returns an array of { symbol, qty, avgEntryPrice, costBasis } objects
-// with zero-qty positions already filtered out.
-function computePositions(trades) {
-  const map = {}
-
-  for (const trade of trades) {
-    const sym = trade.symbol
-    if (!map[sym]) map[sym] = { totalQty: 0, totalCost: 0 }
-
-    if (trade.side === 'buy') {
-      map[sym].totalCost += trade.quantity * trade.price
-      map[sym].totalQty  += trade.quantity
-    } else {
-      // sell: reduce cost basis proportionally
-      const avgBefore = map[sym].totalQty > 0 ? map[sym].totalCost / map[sym].totalQty : 0
-      map[sym].totalQty  -= trade.quantity
-      map[sym].totalCost  = map[sym].totalQty * avgBefore
-    }
-  }
-
-  return Object.entries(map)
-    .filter(([, v]) => v.totalQty > 0.000001)
-    .map(([symbol, v]) => ({
-      symbol,
-      qty: v.totalQty,
-      avgEntryPrice: v.totalQty > 0 ? v.totalCost / v.totalQty : 0,
-      costBasis: v.totalCost,
-    }))
-}
 
 // Portfolio Screen
 const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
@@ -145,53 +115,26 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
       setLoading(true)
       setError(null)
 
-      const { data: { session }, error: authErr } = await supabase.auth.getSession()
-      if (authErr || !session) throw new Error('Not authenticated')
-      const user = session.user
-
-      const { data: trades, error: tradesErr } = await supabase
-        .from('trades')
-        .select('symbol, side, quantity, price, created_at')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: true })
-
-      if (tradesErr) {
-        console.error('Trades fetch error:', tradesErr.message, tradesErr.code, tradesErr.hint, tradesErr.details)
-        // If the trades table doesn't exist yet (migration not applied), show empty portfolio
-        if (tradesErr.code === '42P01' || tradesErr.message?.includes('does not exist')) {
-          setPositions([])
-          return
-        }
-        throw new Error(tradesErr.message)
+      const res = await fetch('/api/portfolio')
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `HTTP ${res.status}`)
       }
+      const { positions: raw } = await res.json()
 
-      const computed = computePositions(trades || [])
-      setPositions(computed)
+      const mapped = (Array.isArray(raw) ? raw : []).map(p => ({
+        symbol:        p.symbol,
+        qty:           parseFloat(p.qty),
+        avgEntryPrice: parseFloat(p.avg_entry_price),
+        costBasis:     parseFloat(p.cost_basis),
+      }))
+      setPositions(mapped)
 
-      // Fetch live prices from Alpaca market data for each open position
-      if (computed.length > 0) {
-        const symbols = computed.map(p => p.symbol).join(',')
-        const headers = {
-          'APCA-API-KEY-ID':     import.meta.env.VITE_ALPACA_API_KEY || '',
-          'APCA-API-SECRET-KEY': import.meta.env.VITE_ALPACA_SECRET_KEY || '',
-        }
-        try {
-          const res = await fetch(
-            `https://data.alpaca.markets/v2/stocks/trades/latest?symbols=${symbols}`,
-            { headers }
-          )
-          if (res.ok) {
-            const json = await res.json()
-            const priceMap = {}
-            for (const [sym, data] of Object.entries(json.trades || {})) {
-              priceMap[sym] = data.p
-            }
-            setPrices(priceMap)
-          }
-        } catch {
-          // Live prices unavailable — fall back to cost basis display
-        }
+      const priceMap = {}
+      for (const p of (Array.isArray(raw) ? raw : [])) {
+        if (p.current_price) priceMap[p.symbol] = parseFloat(p.current_price)
       }
+      setPrices(priceMap)
     } catch (err) {
       console.error('Error loading portfolio:', err)
       setError(err.message)
