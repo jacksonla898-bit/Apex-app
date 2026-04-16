@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
-import { Heart, MessageCircle, PlusCircle, Check } from 'lucide-react'
+import { Heart, MessageCircle, PlusCircle, Check, X, Send } from 'lucide-react'
 
 // Toast notification component
 const Toast = ({ message, onClose }) => {
@@ -10,10 +10,92 @@ const Toast = ({ message, onClose }) => {
   }, [onClose])
 
   return (
-    <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 animate-in fade-in">
+    <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
       <div className="bg-emerald-500 text-white px-6 py-3 rounded-lg shadow-lg font-semibold flex items-center gap-2">
         <Check className="w-4 h-4" />
         {message}
+      </div>
+    </div>
+  )
+}
+
+// Post Trade Modal
+const PostTradeModal = ({ onPost, onCancel }) => {
+  const [ticker, setTicker] = useState('')
+  const [signal, setSignal] = useState('BUY')
+  const [content, setContent] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!ticker || !content) {
+      alert('Please fill in all fields')
+      return
+    }
+    setLoading(true)
+    await onPost({ ticker: ticker.toUpperCase(), signal, content })
+    setLoading(false)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-[#0f0f0f] rounded-2xl border border-[#2a2a2a] p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-white font-bold text-lg">Post Trade</h2>
+          <button onClick={onCancel} className="text-gray-400 hover:text-white transition">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-white text-sm font-semibold block mb-2">Ticker</label>
+            <input
+              type="text"
+              value={ticker}
+              onChange={(e) => setTicker(e.target.value)}
+              placeholder="e.g., NVDA, AAPL, SPY"
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition"
+            />
+          </div>
+          <div>
+            <label className="text-white text-sm font-semibold block mb-2">Signal</label>
+            <select
+              value={signal}
+              onChange={(e) => setSignal(e.target.value)}
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition appearance-none cursor-pointer"
+            >
+              <option value="BUY">BUY</option>
+              <option value="SELL">SELL</option>
+              <option value="HOLD">HOLD</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-white text-sm font-semibold block mb-2">Your Reasoning</label>
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="Share your analysis and trading reasoning..."
+              rows="4"
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition resize-none"
+            />
+          </div>
+          <div className="flex gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="flex-1 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white font-semibold py-2.5 rounded-lg transition border border-[#2a2a2a]"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg transition"
+            >
+              {loading ? 'Posting...' : 'Post Trade'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   )
@@ -29,58 +111,59 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
   const [copyQty, setCopyQty] = useState(1)
   const [toast, setToast] = useState(null)
   const [user, setUser] = useState(null)
-  const [userLikes, setUserLikes] = useState({})
-  const [replies, setReplies] = useState({})
-  const [expandedReplies, setExpandedReplies] = useState({})
-  const [replyingTo, setReplyingTo] = useState(null)
-  const [replyContent, setReplyContent] = useState('')
 
+  // likeCounts: { [postId]: number } — derived from the likes table (source of truth)
+  const [likeCounts, setLikeCounts] = useState({})
+  // userLikes: { [postId]: true } — which posts the current user has liked
+  const [userLikes, setUserLikes] = useState({})
+  // replies: { [postId]: Reply[] }
+  const [replies, setReplies] = useState({})
+  // openReplies: Set of post IDs whose reply section is expanded
+  const [openReplies, setOpenReplies] = useState(new Set())
+  // replyInput: { [postId]: string } — per-post draft text
+  const [replyInput, setReplyInput] = useState({})
+
+  // Resolve current user once on mount
   useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      setUser(user)
-    }
-    getUser()
+    supabase.auth.getUser().then(({ data: { user } }) => setUser(user))
   }, [])
 
+  // Fetch user's own likes whenever user is resolved
+  useEffect(() => {
+    if (user) fetchUserLikes()
+  }, [user])
+
+  // Initial data load + realtime subscriptions (all on mount, not gated on user)
   useEffect(() => {
     fetchPosts()
-    
-    const subscription = supabase
-      .channel('posts')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, (payload) => {
-        fetchPosts()
-      })
+    fetchLikeCounts()
+    fetchReplies()
+
+    const postsSub = supabase
+      .channel('feed-posts')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, fetchPosts)
       .subscribe()
 
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!user) return
-    
-    const likesSubscription = supabase
-      .channel('likes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'likes' }, (payload) => {
-        fetchPosts()
+    // Realtime: rebuild like counts from likes table on any change
+    const likesSub = supabase
+      .channel('feed-likes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'likes' }, () => {
+        fetchLikeCounts()
         fetchUserLikes()
       })
       .subscribe()
 
-    const repliesSubscription = supabase
-      .channel('replies')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'replies' }, (payload) => {
-        fetchReplies()
-      })
+    const repliesSub = supabase
+      .channel('feed-replies')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'replies' }, fetchReplies)
       .subscribe()
 
     return () => {
-      likesSubscription.unsubscribe()
-      repliesSubscription.unsubscribe()
+      postsSub.unsubscribe()
+      likesSub.unsubscribe()
+      repliesSub.unsubscribe()
     }
-  }, [user])
+  }, [])
 
   const fetchPosts = async () => {
     try {
@@ -89,21 +172,27 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
         .from('posts')
         .select('*')
         .order('created_at', { ascending: false })
-      
       if (error) throw error
-      
-      // Transform the data to include username from profile if needed, with fallback to email prefix
-      const transformedPosts = data?.map(post => ({
-        ...post,
-        username: post.username || 'Unknown'
-      })) || []
-      
-      setPosts(transformedPosts)
-      if (user) fetchUserLikes()
+      setPosts(data?.map(p => ({ ...p, username: p.username || 'Unknown' })) || [])
     } catch (err) {
       console.error('Error fetching posts:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Counts are always derived from the likes table — never trust posts.likes
+  const fetchLikeCounts = async () => {
+    try {
+      const { data, error } = await supabase.from('likes').select('post_id')
+      if (error) throw error
+      const counts = {}
+      data?.forEach(like => {
+        counts[like.post_id] = (counts[like.post_id] || 0) + 1
+      })
+      setLikeCounts(counts)
+    } catch (err) {
+      console.error('Error fetching like counts:', err)
     }
   }
 
@@ -114,13 +203,10 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
         .from('likes')
         .select('post_id')
         .eq('user_id', user.id)
-      
       if (error) throw error
-      const likes = {}
-      data?.forEach(like => {
-        likes[like.post_id] = true
-      })
-      setUserLikes(likes)
+      const map = {}
+      data?.forEach(like => { map[like.post_id] = true })
+      setUserLikes(map)
     } catch (err) {
       console.error('Error fetching user likes:', err)
     }
@@ -130,66 +216,38 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
     try {
       const { data, error } = await supabase
         .from('replies')
-        .select(`
-          *,
-          profiles:user_id (
-            username
-          )
-        `)
+        .select('*, profiles:user_id(username)')
         .order('created_at', { ascending: true })
-      
       if (error) throw error
-      
-      // Transform the data to include username from profile, with fallback to email prefix
-      const transformedReplies = data?.map(reply => ({
-        ...reply,
-        username: reply.profiles?.username || (reply.username?.split('@')[0] || 'Unknown')
-      })) || []
-      
-      const repliesByPost = {}
-      transformedReplies.forEach(reply => {
-        if (!repliesByPost[reply.post_id]) repliesByPost[reply.post_id] = []
-        repliesByPost[reply.post_id].push(reply)
+      const grouped = {}
+      data?.forEach(reply => {
+        const username = reply.profiles?.username || reply.username?.split('@')[0] || 'Unknown'
+        if (!grouped[reply.post_id]) grouped[reply.post_id] = []
+        grouped[reply.post_id].push({ ...reply, username })
       })
-      setReplies(repliesByPost)
+      setReplies(grouped)
     } catch (err) {
       console.error('Error fetching replies:', err)
     }
   }
 
   const handlePostTrade = async (postData) => {
+    if (!user) { setToast('Please log in to post'); return }
     try {
-      if (!user) {
-        setToast('Please log in to post')
-        return
-      }
-
-      // Get username from profile
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('username')
-        .eq('id', user.id)
-        .single()
-
-      let username = user.email?.split('@')[0] || 'Unknown' // fallback to email prefix
-      if (!profileError && profile?.username) {
-        username = profile.username
-      }
-
-      const { error } = await supabase.from('posts').insert([
-        {
-          user_id: user.id,
-          username: username,
-          ticker: postData.ticker,
-          signal: postData.signal,
-          content: postData.content,
-          created_at: new Date().toISOString(),
-          likes: 0
-        }
-      ])
-
+      const { data: profile } = await supabase
+        .from('profiles').select('username').eq('id', user.id).single()
+      const username = profile?.username || user.email?.split('@')[0] || 'Unknown'
+      const { error } = await supabase.from('posts').insert([{
+        user_id: user.id,
+        username,
+        ticker: postData.ticker,
+        signal: postData.signal,
+        content: postData.content,
+        created_at: new Date().toISOString(),
+        likes: 0
+      }])
       if (error) throw error
-      setToast('Trade posted successfully!')
+      setToast('Trade posted!')
       setPostTradeModal(false)
       fetchPosts()
     } catch (err) {
@@ -199,91 +257,100 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
   }
 
   const handleLike = async (postId) => {
-    if (!user) {
-      setToast('Please log in to like')
-      return
-    }
+    if (!user) { setToast('Please log in to like'); return }
+    const isLiked = !!userLikes[postId]
+
+    // Optimistic update — feels instant
+    setUserLikes(prev => {
+      const next = { ...prev }
+      if (isLiked) delete next[postId]
+      else next[postId] = true
+      return next
+    })
+    setLikeCounts(prev => ({
+      ...prev,
+      [postId]: Math.max(0, (prev[postId] || 0) + (isLiked ? -1 : 1))
+    }))
 
     try {
-      const isLiked = userLikes[postId]
-      
       if (isLiked) {
-        // Unlike
         const { error } = await supabase
-          .from('likes')
-          .delete()
-          .eq('post_id', postId)
-          .eq('user_id', user.id)
-        
+          .from('likes').delete().eq('post_id', postId).eq('user_id', user.id)
         if (error) throw error
-        
-        const newLikes = { ...userLikes }
-        delete newLikes[postId]
-        setUserLikes(newLikes)
       } else {
-        // Like
         const { error } = await supabase
-          .from('likes')
-          .insert([{ post_id: postId, user_id: user.id }])
-        
+          .from('likes').insert([{ post_id: postId, user_id: user.id }])
         if (error) throw error
-        setUserLikes({ ...userLikes, [postId]: true })
       }
     } catch (err) {
       console.error('Error toggling like:', err)
+      // Roll back on failure
+      fetchLikeCounts()
+      fetchUserLikes()
     }
   }
 
+  const toggleReplies = (postId) => {
+    setOpenReplies(prev => {
+      const next = new Set(prev)
+      if (next.has(postId)) next.delete(postId)
+      else next.add(postId)
+      return next
+    })
+  }
+
   const handleReply = async (postId) => {
-    if (!replyContent.trim()) return
-    if (!user) {
-      setToast('Please log in to reply')
-      return
+    const content = (replyInput[postId] || '').trim()
+    if (!content) return
+    if (!user) { setToast('Please log in to reply'); return }
+
+    // Optimistic: show reply immediately
+    const tempId = `temp-${Date.now()}`
+    const tempReply = {
+      id: tempId,
+      post_id: postId,
+      user_id: user.id,
+      username: user.email?.split('@')[0] || 'You',
+      content,
+      created_at: new Date().toISOString()
     }
+    setReplies(prev => ({ ...prev, [postId]: [...(prev[postId] || []), tempReply] }))
+    setReplyInput(prev => ({ ...prev, [postId]: '' }))
 
     try {
-      const { error } = await supabase.from('replies').insert([
-        {
-          post_id: postId,
-          user_id: user.id,
-          content: replyContent.trim(),
-          created_at: new Date().toISOString()
-        }
-      ])
-
+      const { error } = await supabase.from('replies').insert([{
+        post_id: postId,
+        user_id: user.id,
+        content,
+        created_at: new Date().toISOString()
+      }])
       if (error) throw error
-      setReplyContent('')
-      setReplyingTo(null)
-      fetchReplies()
+      // Realtime subscription will replace the temp reply with the real one
     } catch (err) {
       console.error('Error posting reply:', err)
+      // Roll back temp reply
+      setReplies(prev => ({
+        ...prev,
+        [postId]: (prev[postId] || []).filter(r => r.id !== tempId)
+      }))
+      setToast('Failed to post reply')
     }
   }
 
   const formatTimeAgo = (timestamp) => {
-    const now = new Date()
-    const postTime = new Date(timestamp)
-    const diffMs = now - postTime
-    const diffMins = Math.floor(diffMs / 60000)
-    const diffHours = Math.floor(diffMs / 3600000)
-    const diffDays = Math.floor(diffMs / 86400000)
-
+    const diffMins = Math.floor((Date.now() - new Date(timestamp)) / 60000)
     if (diffMins < 1) return 'just now'
     if (diffMins < 60) return `${diffMins}m ago`
-    if (diffHours < 24) return `${diffHours}h ago`
-    return `${diffDays}d ago`
+    if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`
+    return `${Math.floor(diffMins / 1440)}d ago`
   }
 
   const getSignalColor = (signal) => {
     switch (signal) {
-      case 'BUY':
-        return { bg: 'bg-emerald-500 bg-opacity-20', border: 'border-emerald-500', text: 'text-emerald-400', badge: 'bg-emerald-500' }
-      case 'SELL':
-        return { bg: 'bg-red-500 bg-opacity-20', border: 'border-red-500', text: 'text-red-400', badge: 'bg-red-500' }
-      case 'HOLD':
-        return { bg: 'bg-yellow-500 bg-opacity-20', border: 'border-yellow-500', text: 'text-yellow-400', badge: 'bg-yellow-500' }
-      default:
-        return { bg: 'bg-gray-500 bg-opacity-20', border: 'border-gray-500', text: 'text-gray-400', badge: 'bg-gray-500' }
+      case 'BUY':  return { bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', text: 'text-emerald-400' }
+      case 'SELL': return { bg: 'bg-red-500/10',     border: 'border-red-500/30',     text: 'text-red-400' }
+      case 'HOLD': return { bg: 'bg-yellow-500/10',  border: 'border-yellow-500/30',  text: 'text-yellow-400' }
+      default:     return { bg: 'bg-gray-500/10',    border: 'border-gray-500/30',    text: 'text-gray-400' }
     }
   }
 
@@ -292,7 +359,7 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
       {/* Post Trade Button */}
       <button
         onClick={() => setPostTradeModal(true)}
-        className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold py-3 rounded-lg transition flex items-center justify-center gap-2"
+        className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2"
       >
         <PlusCircle className="w-5 h-5" /> Post Trade
       </button>
@@ -308,14 +375,15 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
       ) : (
         posts.map((post) => {
           const signalColor = getSignalColor(post.signal)
-          const isLiked = userLikes[post.id]
+          const isLiked = !!userLikes[post.id]
+          const likeCount = likeCounts[post.id] || 0
           const postReplies = replies[post.id] || []
-          const repliesCount = postReplies.length
-          const isExpanded = expandedReplies[post.id]
-          
+          const replyCount = postReplies.length
+          const isReplyOpen = openReplies.has(post.id)
+
           return (
             <div key={post.id} className="bg-[#1a1a1a] rounded-2xl p-4 border border-[#2a2a2a] space-y-3">
-              {/* Header with username and time */}
+              {/* Header */}
               <div className="flex items-center justify-between">
                 <div>
                   <button
@@ -326,97 +394,94 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
                   </button>
                   <div className="text-gray-500 text-xs">{formatTimeAgo(post.created_at)}</div>
                 </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-bold border ${signalColor.bg} ${signalColor.text} border-opacity-30`}>
+                <span className={`px-3 py-1 rounded-full text-xs font-bold border ${signalColor.bg} ${signalColor.text} ${signalColor.border}`}>
                   {post.signal}
                 </span>
               </div>
 
-              {/* Post content */}
-              <p className="text-gray-200 text-sm">{post.content}</p>
+              {/* Content */}
+              <p className="text-gray-200 text-sm leading-relaxed">{post.content}</p>
 
               {/* Ticker tag */}
-              <div className="flex gap-2 flex-wrap">
-                <span className="bg-blue-500 bg-opacity-20 text-blue-300 text-xs px-2 py-1 rounded-full border border-blue-500 border-opacity-30 font-medium">
+              <div>
+                <span className="bg-blue-500/10 text-blue-300 text-xs px-2.5 py-1 rounded-full border border-blue-500/20 font-medium">
                   ${post.ticker}
                 </span>
               </div>
 
-              {/* Actions */}
-              <div className="flex gap-2 pt-2">
+              {/* Action row */}
+              <div className="flex items-center gap-2 pt-1">
+                {/* Like */}
                 <button
                   onClick={() => handleLike(post.id)}
-                  className={`flex-1 text-sm py-2 rounded-lg transition border flex items-center justify-center gap-1.5 ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition border ${
                     isLiked
-                      ? 'bg-emerald-500 bg-opacity-20 border-emerald-500 border-opacity-30 text-emerald-400 font-semibold'
-                      : 'bg-[#0f0f0f] hover:bg-[#1a1a1a] text-gray-300 border-[#2a2a2a]'
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                      : 'bg-[#0f0f0f] border-[#2a2a2a] text-gray-400 hover:text-white hover:border-[#3a3a3a]'
                   }`}
                 >
-                  <Heart className={`w-4 h-4 ${isLiked ? 'fill-current' : ''}`} /> {post.likes || 0}
+                  <Heart className={`w-4 h-4 ${isLiked ? 'fill-emerald-400' : ''}`} />
+                  <span>{likeCount}</span>
                 </button>
+
+                {/* Reply */}
                 <button
-                  onClick={() => setReplyingTo(replyingTo === post.id ? null : post.id)}
-                  className="flex-1 bg-[#0f0f0f] hover:bg-[#1a1a1a] text-gray-300 text-sm py-2 rounded-lg transition border border-[#2a2a2a] flex items-center justify-center gap-1.5"
+                  onClick={() => toggleReplies(post.id)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition border ${
+                    isReplyOpen
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                      : 'bg-[#0f0f0f] border-[#2a2a2a] text-gray-400 hover:text-white hover:border-[#3a3a3a]'
+                  }`}
                 >
-                  <MessageCircle className="w-4 h-4" /> {repliesCount}
+                  <MessageCircle className="w-4 h-4" />
+                  <span>{replyCount}</span>
                 </button>
-                <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCopyModal(post); setCopyQty(1); }} style={{background:'#22c55e', color:'white', border:'none', padding:'6px 14px', borderRadius:'6px', cursor:'pointer', fontSize:'12px', fontWeight:'500'}}>Copy Trade</button>
+
+                {/* Copy Trade — pushed right */}
+                <button
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCopyModal(post); setCopyQty(1) }}
+                  className="ml-auto px-3 py-1.5 bg-[#0f0f0f] hover:bg-[#2a2a2a] border border-[#2a2a2a] hover:border-emerald-500/40 text-emerald-400 text-xs font-semibold rounded-lg transition"
+                >
+                  Copy Trade
+                </button>
               </div>
 
-              {/* Reply Input */}
-              {replyingTo === post.id && (
-                <div className="space-y-2 pt-2 border-t border-[#2a2a2a]">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={replyContent}
-                      onChange={(e) => setReplyContent(e.target.value)}
-                      placeholder="Write a reply..."
-                      className="flex-1 bg-[#0f0f0f] border border-[#2a2a2a] text-white px-3 py-2 rounded-lg text-sm hover:border-[#3a3a3a] transition"
-                      onKeyPress={(e) => e.key === 'Enter' && handleReply(post.id)}
-                    />
-                    <button
-                      onClick={() => handleReply(post.id)}
-                      className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-2 rounded-lg transition text-sm font-semibold"
-                    >
-                      Send
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Replies */}
-              {repliesCount > 0 && (
-                <div className="pt-2 border-t border-[#2a2a2a] space-y-2">
-                  {!isExpanded && (
-                    <button
-                      onClick={() => setExpandedReplies({ ...expandedReplies, [post.id]: true })}
-                      className="text-emerald-400 text-xs font-semibold hover:text-emerald-300 transition"
-                    >
-                      View {repliesCount} {repliesCount === 1 ? 'reply' : 'replies'}
-                    </button>
-                  )}
-                  
-                  {isExpanded && (
-                    <>
+              {/* Reply section */}
+              {isReplyOpen && (
+                <div className="pt-3 border-t border-[#2a2a2a] space-y-3">
+                  {/* Existing replies */}
+                  {postReplies.length > 0 && (
+                    <div className="space-y-2">
                       {postReplies.map((reply) => (
-                        <div key={reply.id} className="bg-[#0f0f0f] rounded-lg p-3 border border-[#2a2a2a] space-y-1">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <div className="font-semibold text-white text-xs">{reply.username}</div>
-                              <div className="text-gray-500 text-xs">{formatTimeAgo(reply.created_at)}</div>
-                            </div>
+                        <div key={reply.id} className="bg-[#0f0f0f] rounded-xl p-3 border border-[#2a2a2a]">
+                          <div className="flex items-baseline gap-2 mb-1">
+                            <span className="text-white text-xs font-semibold">{reply.username}</span>
+                            <span className="text-gray-600 text-xs">{formatTimeAgo(reply.created_at)}</span>
                           </div>
                           <p className="text-gray-300 text-sm">{reply.content}</p>
                         </div>
                       ))}
-                      <button
-                        onClick={() => setExpandedReplies({ ...expandedReplies, [post.id]: false })}
-                        className="text-gray-500 text-xs hover:text-gray-400 transition"
-                      >
-                        Hide replies
-                      </button>
-                    </>
+                    </div>
                   )}
+
+                  {/* Reply input */}
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={replyInput[post.id] || ''}
+                      onChange={(e) => setReplyInput(prev => ({ ...prev, [post.id]: e.target.value }))}
+                      onKeyDown={(e) => e.key === 'Enter' && handleReply(post.id)}
+                      placeholder="Write a reply..."
+                      className="flex-1 bg-[#0f0f0f] border border-[#2a2a2a] text-white text-sm px-3 py-2 rounded-lg hover:border-[#3a3a3a] focus:border-emerald-500/50 focus:outline-none transition"
+                    />
+                    <button
+                      onClick={() => handleReply(post.id)}
+                      disabled={!(replyInput[post.id] || '').trim()}
+                      className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white px-3 py-2 rounded-lg transition"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -434,42 +499,70 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
 
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
 
+      {/* Copy Trade Modal */}
       {copyModal && (
-        <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.8)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={() => setCopyModal(null)}>
-          <div style={{background:'#1a1a1a',padding:'24px',borderRadius:'12px',width:'320px'}} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{color:'white',marginBottom:'16px'}}>Copy This Trade?</h3>
-            <p style={{color:'#888',marginBottom:'8px'}}>Trader: {copyModal.username}</p>
-            <p style={{color:'#22c55e',marginBottom:'8px'}}>Signal: {copyModal.signal} {copyModal.ticker}</p>
-            <input type="number" value={copyQty} onChange={(e) => setCopyQty(e.target.value)} min="1" style={{width:'100%',padding:'8px',marginBottom:'16px',background:'#333',color:'white',border:'1px solid #444',borderRadius:'6px'}} />
-            <div style={{display:'flex',gap:'8px'}}>
-              <button onClick={() => setCopyModal(null)} style={{flex:1,padding:'10px',background:'#333',color:'white',border:'none',borderRadius:'6px',cursor:'pointer'}}>Cancel</button>
-              <button onClick={async (e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                setCopyLoading(true)
-                try {
-                  const res = await fetch('/api/trade', {
-                    method: 'POST',
-                    headers: {'Content-Type':'application/json'},
-                    body: JSON.stringify({ticker: copyModal.ticker, side: copyModal.signal === 'SELL' ? 'sell' : 'buy', qty: copyQty})
-                  })
-                  const data = await res.json()
-                  setCopyModal(null)
-                  setToast('Trade executed! ' + copyModal.signal + ' ' + copyQty + ' shares of ' + copyModal.ticker)
-                  setTimeout(() => setToast(null), 3000)
-                } catch(err) {
-                  setToast('Trade failed: ' + err.message)
-                  setTimeout(() => setToast(null), 3000)
-                }
-                setCopyLoading(false)
-              }} style={{flex:1,padding:'10px',background:'#22c55e',color:'white',border:'none',borderRadius:'6px',cursor:'pointer'}}>
+        <div
+          className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+          onClick={() => setCopyModal(null)}
+        >
+          <div
+            className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6 w-full max-w-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-white font-bold text-lg mb-4">Copy This Trade?</h3>
+            <p className="text-gray-400 text-sm mb-1">
+              Trader: <span className="text-white font-medium">{copyModal.username}</span>
+            </p>
+            <p className="text-emerald-400 text-sm font-semibold mb-4">
+              {copyModal.signal} {copyModal.ticker}
+            </p>
+            <label className="text-gray-500 text-xs block mb-1">Quantity (shares)</label>
+            <input
+              type="number"
+              value={copyQty}
+              onChange={(e) => setCopyQty(e.target.value)}
+              min="1"
+              className="w-full bg-[#0f0f0f] border border-[#2a2a2a] text-white px-3 py-2 rounded-lg mb-4 text-sm focus:outline-none focus:border-emerald-500/50"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => setCopyModal(null)}
+                className="flex-1 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-semibold py-2.5 rounded-lg transition text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async (e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setCopyLoading(true)
+                  try {
+                    const res = await fetch('/api/trade', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        ticker: copyModal.ticker,
+                        side: copyModal.signal === 'SELL' ? 'sell' : 'buy',
+                        qty: copyQty
+                      })
+                    })
+                    await res.json()
+                    setCopyModal(null)
+                    setToast(`${copyModal.signal} ${copyQty} × ${copyModal.ticker} executed`)
+                  } catch (err) {
+                    setToast('Trade failed: ' + err.message)
+                  } finally {
+                    setCopyLoading(false)
+                  }
+                }}
+                className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2.5 rounded-lg transition text-sm"
+              >
                 {copyLoading ? 'Executing...' : 'Confirm Copy'}
               </button>
             </div>
           </div>
         </div>
       )}
-      {toast && <div style={{position:'fixed',top:'20px',left:'50%',transform:'translateX(-50%)',background:'#22c55e',color:'white',padding:'12px 24px',borderRadius:'8px',zIndex:2000}}>{toast}</div>}
     </div>
   )
 }

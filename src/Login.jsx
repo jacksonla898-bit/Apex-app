@@ -71,12 +71,12 @@ const Login = ({ onAuthSuccess }) => {
   return (
     <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/* APEX Logo */}
+        {/* Conviction Logo */}
         <div className="text-center mb-8">
-          <div className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-emerald-300 mb-2">
-            APEX
+          <div className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-emerald-300 mb-2">
+            Conviction
           </div>
-          <p className="text-gray-500 text-sm">Trading • Investing • Wealth</p>
+          <p className="text-gray-500 text-sm">Trade with Conviction</p>
         </div>
 
         {/* Login Form */}
