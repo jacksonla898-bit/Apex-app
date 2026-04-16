@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import './App.css'
-import { supabase } from './supabaseClient'
-import Login from './Login'
+import { supabase, recordTrade } from './supabaseClient'
+import Landing from './Landing'
 import Profile from './Profile'
 import FeedScreen from './Feed'
+import FundsScreen from './Funds'
 import {
   LayoutDashboard,
   Rss,
@@ -13,7 +14,6 @@ import {
   RefreshCw,
   Check,
   Zap,
-  X,
 } from 'lucide-react'
 
 // Toast notification component
@@ -98,44 +98,118 @@ const ProgressBar = ({ value, color = 'bg-emerald-500' }) => (
   </div>
 )
 
+// Compute positions from a flat list of trade rows.
+// Returns an array of { symbol, qty, avgEntryPrice, costBasis } objects
+// with zero-qty positions already filtered out.
+function computePositions(trades) {
+  const map = {}
+
+  for (const trade of trades) {
+    const sym = trade.symbol
+    if (!map[sym]) map[sym] = { totalQty: 0, totalCost: 0 }
+
+    if (trade.side === 'buy') {
+      map[sym].totalCost += trade.quantity * trade.price
+      map[sym].totalQty  += trade.quantity
+    } else {
+      // sell: reduce cost basis proportionally
+      const avgBefore = map[sym].totalQty > 0 ? map[sym].totalCost / map[sym].totalQty : 0
+      map[sym].totalQty  -= trade.quantity
+      map[sym].totalCost  = map[sym].totalQty * avgBefore
+    }
+  }
+
+  return Object.entries(map)
+    .filter(([, v]) => v.totalQty > 0.000001)
+    .map(([symbol, v]) => ({
+      symbol,
+      qty: v.totalQty,
+      avgEntryPrice: v.totalQty > 0 ? v.totalCost / v.totalQty : 0,
+      costBasis: v.totalCost,
+    }))
+}
+
 // Portfolio Screen
 const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
-  const [portfolio, setPortfolio] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [positions, setPositions] = useState([])
+  const [prices, setPrices]       = useState({})   // symbol -> current price
+  const [loading, setLoading]     = useState(true)
+  const [error, setError]         = useState(null)
 
   useEffect(() => {
-    fetchPortfolio()
+    loadPortfolio()
   }, [refreshTrigger])
 
-  const fetchPortfolio = async () => {
+  const loadPortfolio = async () => {
     try {
       setLoading(true)
       setError(null)
 
-      const response = await fetch('/api/portfolio')
-      if (!response.ok) {
-        throw new Error(`Failed to fetch portfolio: ${response.status}`)
+      // Always use getUser() for authenticated reads
+      const { data: { user }, error: authErr } = await supabase.auth.getUser()
+      if (authErr || !user) throw new Error('Not authenticated')
+
+      const { data: trades, error: tradesErr } = await supabase
+        .from('trades')
+        .select('symbol, side, quantity, price, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true })
+
+      if (tradesErr) {
+        console.error('Trades fetch error:', tradesErr.message, tradesErr.code, tradesErr.hint, tradesErr.details)
+        throw new Error(tradesErr.message)
       }
 
-      const data = await response.json()
-      setPortfolio(data)
+      const computed = computePositions(trades || [])
+      setPositions(computed)
+
+      // Fetch live prices from Alpaca market data for each open position
+      if (computed.length > 0) {
+        const symbols = computed.map(p => p.symbol).join(',')
+        const headers = {
+          'APCA-API-KEY-ID':     import.meta.env.VITE_ALPACA_API_KEY || '',
+          'APCA-API-SECRET-KEY': import.meta.env.VITE_ALPACA_SECRET_KEY || '',
+        }
+        try {
+          const res = await fetch(
+            `https://data.alpaca.markets/v2/stocks/trades/latest?symbols=${symbols}`,
+            { headers }
+          )
+          if (res.ok) {
+            const json = await res.json()
+            const priceMap = {}
+            for (const [sym, data] of Object.entries(json.trades || {})) {
+              priceMap[sym] = data.p
+            }
+            setPrices(priceMap)
+          }
+        } catch {
+          // Live prices unavailable — fall back to cost basis display
+        }
+      }
     } catch (err) {
-      console.error('Error fetching portfolio:', err)
+      console.error('Error loading portfolio:', err)
       setError(err.message)
     } finally {
       setLoading(false)
     }
   }
 
+  const fmt = (n) => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  const totalEquity = positions.reduce((sum, p) => {
+    const currentPrice = prices[p.symbol] ?? p.avgEntryPrice
+    return sum + p.qty * currentPrice
+  }, 0)
+
+  const totalCostBasis = positions.reduce((sum, p) => sum + p.costBasis, 0)
+  const totalPL = totalEquity - totalCostBasis
+
   if (loading) {
     return (
       <div className="space-y-6">
         <div className="flex justify-end">
-          <button
-            onClick={onLogout}
-            className="bg-red-500 hover:bg-red-600 text-white text-sm px-4 py-2 rounded-lg transition font-semibold"
-          >
+          <button onClick={onLogout} className="bg-red-500 hover:bg-red-600 text-white text-sm px-4 py-2 rounded-lg transition font-semibold">
             Logout
           </button>
         </div>
@@ -151,20 +225,14 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
     return (
       <div className="space-y-6">
         <div className="flex justify-end">
-          <button
-            onClick={onLogout}
-            className="bg-red-500 hover:bg-red-600 text-white text-sm px-4 py-2 rounded-lg transition font-semibold"
-          >
+          <button onClick={onLogout} className="bg-red-500 hover:bg-red-600 text-white text-sm px-4 py-2 rounded-lg transition font-semibold">
             Logout
           </button>
         </div>
         <div className="bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-2xl p-6">
           <p className="text-red-400 font-semibold mb-2">Portfolio Error</p>
           <p className="text-red-300 text-sm">{error}</p>
-          <button
-            onClick={fetchPortfolio}
-            className="mt-4 bg-red-500 hover:bg-red-600 text-white text-sm px-4 py-2 rounded-lg transition font-semibold"
-          >
+          <button onClick={loadPortfolio} className="mt-4 bg-red-500 hover:bg-red-600 text-white text-sm px-4 py-2 rounded-lg transition font-semibold">
             Retry
           </button>
         </div>
@@ -172,23 +240,17 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
     )
   }
 
-  const account = portfolio?.account
-  const positions = portfolio?.positions || []
-
   return (
     <div className="space-y-6">
-      {/* Logout Button */}
+      {/* Header row */}
       <div className="flex justify-between items-center">
         <button
-          onClick={fetchPortfolio}
+          onClick={loadPortfolio}
           className="bg-gray-600 hover:bg-gray-700 text-white text-sm px-4 py-2 rounded-lg transition font-semibold flex items-center gap-2"
         >
           <RefreshCw className="w-4 h-4" /> Refresh
         </button>
-        <button
-          onClick={onLogout}
-          className="bg-red-500 hover:bg-red-600 text-white text-sm px-4 py-2 rounded-lg transition font-semibold"
-        >
+        <button onClick={onLogout} className="bg-red-500 hover:bg-red-600 text-white text-sm px-4 py-2 rounded-lg transition font-semibold">
           Logout
         </button>
       </div>
@@ -197,19 +259,17 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
       <div className="bg-[#1a1a1a] rounded-2xl p-6 border border-[#2a2a2a]">
         <p className="text-gray-400 text-sm mb-2">Total Portfolio Value</p>
         <div className="text-5xl font-bold text-white mb-2">
-          ${account?.equity?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+          ${fmt(totalEquity)}
         </div>
         <div className="grid grid-cols-2 gap-4 mt-4">
           <div>
-            <p className="text-gray-400 text-xs">Cash Balance</p>
-            <p className="text-white font-semibold">
-              ${account?.cash?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
-            </p>
+            <p className="text-gray-400 text-xs">Cost Basis</p>
+            <p className="text-white font-semibold">${fmt(totalCostBasis)}</p>
           </div>
           <div>
-            <p className="text-gray-400 text-xs">Buying Power</p>
-            <p className="text-emerald-400 font-semibold">
-              ${account?.buyingPower?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+            <p className="text-gray-400 text-xs">Total P&L</p>
+            <p className={`font-semibold ${totalPL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              {totalPL >= 0 ? '+' : ''}${fmt(totalPL)}
             </p>
           </div>
         </div>
@@ -227,122 +287,51 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
             <div className="text-gray-500 text-sm">Start trading to see your positions here</div>
           </div>
         ) : (
-          <div className="space-y-1">
-            {positions.map((position) => (
-              <div key={position.symbol} className="bg-[#1a1a1a] rounded-xl p-4 border border-[#2a2a2a] flex items-center justify-between hover:bg-[#222] transition">
-                <div className="flex-1">
-                  <div className="font-bold text-white text-base">{position.symbol}</div>
-                  <div className="text-gray-500 text-xs">{position.qty} shares @ ${position.avgEntryPrice?.toFixed(2)}</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-white font-semibold">${position.currentPrice?.toFixed(2)}</div>
-                  <div className="text-gray-400 text-xs">Market Value: ${position.marketValue?.toFixed(2)}</div>
-                  <div className={`text-sm font-semibold ${position.unrealizedPl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {position.unrealizedPl >= 0 ? '+' : ''}${position.unrealizedPl?.toFixed(2)} ({position.unrealizedPlpc >= 0 ? '+' : ''}{(position.unrealizedPlpc * 100)?.toFixed(2)}%)
+          <div className="space-y-2">
+            {positions.map((position) => {
+              const currentPrice  = prices[position.symbol] ?? position.avgEntryPrice
+              const marketValue   = position.qty * currentPrice
+              const pl            = marketValue - position.costBasis
+              const plPct         = position.costBasis > 0 ? (pl / position.costBasis) * 100 : 0
+              const isGain        = pl >= 0
+              return (
+                <div key={position.symbol} className="bg-[#1a1a1a] rounded-xl p-4 border border-[#2a2a2a] hover:bg-[#222] transition">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <div className="font-bold text-white text-base">{position.symbol}</div>
+                      <div className="text-gray-500 text-xs mt-0.5">
+                        {position.qty % 1 === 0 ? position.qty : position.qty.toFixed(4)} shares @ ${fmt(position.avgEntryPrice)}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-white font-semibold">${fmt(currentPrice)}</div>
+                      <div className="text-gray-500 text-xs mt-0.5">{prices[position.symbol] ? 'live price' : 'entry price'}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t border-[#2a2a2a]">
+                    <div>
+                      <div className="text-gray-500 text-xs">Market Value</div>
+                      <div className="text-white text-sm font-medium">${fmt(marketValue)}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-gray-500 text-xs">Unrealized P&L</div>
+                      <div className={`text-sm font-bold ${isGain ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {isGain ? '+' : ''}${fmt(pl)}{' '}
+                        <span className="text-xs font-semibold">
+                          ({isGain ? '+' : ''}{plPct.toFixed(2)}%)
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
     </div>
   )
 }
-
-// Post Trade Modal Component
-const PostTradeModal = ({ onPost, onCancel }) => {
-  const [ticker, setTicker] = useState('')
-  const [signal, setSignal] = useState('BUY')
-  const [content, setContent] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    if (!ticker || !content) {
-      alert('Please fill in all fields')
-      return
-    }
-    setLoading(true)
-    await onPost({ ticker: ticker.toUpperCase(), signal, content })
-    setLoading(false)
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-      <div className="bg-[#0f0f0f] rounded-2xl border border-[#2a2a2a] p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-white font-bold text-lg">Post Trade</h2>
-          <button
-            onClick={onCancel}
-            className="text-gray-400 hover:text-white"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Ticker Input */}
-          <div>
-            <label className="text-white text-sm font-semibold block mb-2">Ticker</label>
-            <input
-              type="text"
-              value={ticker}
-              onChange={(e) => setTicker(e.target.value)}
-              placeholder="e.g., NVDA, AAPL, SPY"
-              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition"
-            />
-          </div>
-
-          {/* Signal Dropdown */}
-          <div>
-            <label className="text-white text-sm font-semibold block mb-2">Signal</label>
-            <select
-              value={signal}
-              onChange={(e) => setSignal(e.target.value)}
-              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition appearance-none cursor-pointer"
-            >
-              <option value="BUY">BUY</option>
-              <option value="SELL">SELL</option>
-              <option value="HOLD">HOLD</option>
-            </select>
-          </div>
-
-          {/* Content Textarea */}
-          <div>
-            <label className="text-white text-sm font-semibold block mb-2">Your Reasoning</label>
-            <textarea
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="Share your analysis and trading reasoning..."
-              rows="4"
-              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition resize-none"
-            />
-          </div>
-
-          {/* Buttons */}
-          <div className="flex gap-3 pt-4">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="flex-1 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white font-semibold py-2.5 rounded-lg transition border border-[#2a2a2a]"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg transition"
-            >
-              {loading ? 'Posting...' : 'Post Trade'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
 
 // AI Trader Screen
 const AITraderScreen = ({ onTradeSuccess }) => {
@@ -402,7 +391,7 @@ const AITraderScreen = ({ onTradeSuccess }) => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          symbol: tickerInput,
+          ticker: tickerInput,
           qty: 1,
           side: 'buy'
         })
@@ -416,7 +405,13 @@ const AITraderScreen = ({ onTradeSuccess }) => {
       const data = await response.json()
       setToast(data.message)
       console.log('Trade placed:', data)
-      
+
+      // Record the trade in Supabase so the portfolio stays per-user
+      const entryPrice = parseFloat(String(signal.entry).replace(/[^0-9.]/g, ''))
+      if (entryPrice > 0) {
+        await recordTrade({ symbol: tickerInput, side: 'buy', quantity: 1, price: entryPrice })
+      }
+
       // Trigger portfolio refresh
       if (onTradeSuccess) {
         onTradeSuccess()
@@ -593,62 +588,6 @@ const AITraderScreen = ({ onTradeSuccess }) => {
   )
 }
 
-// Funds Screen
-const FundsScreen = () => {
-  const funds = [
-    {
-      id: 1,
-      name: 'Apex Growth Fund',
-      manager: 'Sarah Chen',
-      return: 42.8,
-      aum: '$485M',
-      minInvest: '$1,000'
-    },
-    {
-      id: 2,
-      name: 'Tech Innovation Fund',
-      manager: 'Marcus Johnson',
-      return: 38.5,
-      aum: '$762M',
-      minInvest: '$5,000'
-    }
-  ]
-  
-  return (
-    <div className="space-y-4">
-      {funds.map((fund) => (
-        <div key={fund.id} className="bg-gradient-to-br from-[#1a1a1a] to-[#141414] rounded-2xl p-5 border border-[#2a2a2a] space-y-4">
-          <div className="space-y-2">
-            <div className="font-bold text-white text-base">{fund.name}</div>
-            <div className="text-gray-400 text-sm">Manager: {fund.manager}</div>
-          </div>
-          
-          <div className="flex justify-between items-start pt-2 border-t border-[#2a2a2a]">
-            <div className="space-y-3 flex-1">
-              <div>
-                <div className="text-gray-500 text-xs mb-1">Assets Under Management</div>
-                <div className="text-white font-semibold">{fund.aum}</div>
-              </div>
-              <div>
-                <div className="text-gray-500 text-xs mb-1">Minimum Investment</div>
-                <div className="text-white font-semibold">{fund.minInvest}</div>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-emerald-400 text-3xl font-bold">{fund.return}%</div>
-              <div className="text-gray-500 text-xs">YTD Return</div>
-            </div>
-          </div>
-          
-          <button className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2.5 rounded-lg transition text-sm">
-            Invest Now
-          </button>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 // Main App Component
 export default function App() {
   const [activeTab, setActiveTab] = useState('portfolio')
@@ -713,7 +652,7 @@ export default function App() {
       case 'ai':
         return <AITraderScreen onTradeSuccess={() => setPortfolioRefreshTrigger(prev => prev + 1)} />
       case 'funds':
-        return <FundsScreen />
+        return <FundsScreen user={user} />
       case 'profile':
         return user ? (
           <Profile
@@ -738,7 +677,7 @@ export default function App() {
 
   // Show login screen if not authenticated
   if (!user) {
-    return <Login onAuthSuccess={handleAuthSuccess} />
+    return <Landing onAuthSuccess={handleAuthSuccess} />
   }
   
   return (
@@ -748,9 +687,9 @@ export default function App() {
         {/* Header */}
         <div className="bg-[#0f0f0f] border-b border-[#2a2a2a] p-4 sticky top-0 z-10">
           <div className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-emerald-300">
-            APEX
+            Conviction
           </div>
-          <p className="text-gray-500 text-xs mt-1">Trading • Investing • Wealth</p>
+          <p className="text-gray-500 text-xs mt-1">Trade with Conviction</p>
         </div>
         
         {/* Screen Content */}
