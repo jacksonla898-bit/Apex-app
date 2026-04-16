@@ -145,9 +145,9 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
       setLoading(true)
       setError(null)
 
-      // Always use getUser() for authenticated reads
-      const { data: { user }, error: authErr } = await supabase.auth.getUser()
-      if (authErr || !user) throw new Error('Not authenticated')
+      const { data: { session }, error: authErr } = await supabase.auth.getSession()
+      if (authErr || !session) throw new Error('Not authenticated')
+      const user = session.user
 
       const { data: trades, error: tradesErr } = await supabase
         .from('trades')
@@ -605,8 +605,8 @@ export default function App() {
     // Check for existing session
     const checkUser = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser()
-        setUser(user)
+        const { data: { session } } = await supabase.auth.getSession()
+        setUser(session?.user ?? null)
       } catch {
         setUser(null)
       } finally {
