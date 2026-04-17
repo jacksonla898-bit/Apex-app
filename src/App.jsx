@@ -648,62 +648,162 @@ const CommunityModal = ({ ticker, onClose }) => {
   )
 }
 
-// Sentiment Picker Modal
-const SentimentPickerModal = ({ onPick, onCancel }) => {
-  const options = [
-    {
-      value:    'high',
-      icon:     <Zap className="w-5 h-5 text-yellow-400" />,
-      label:    'High conviction',
-      subtitle: 'Strong signal, sizing up',
-      border:   'border-yellow-500/40',
-      bg:       'hover:bg-yellow-500/10',
-    },
-    {
-      value:    'regular',
-      icon:     <Check className="w-5 h-5 text-emerald-400" />,
-      label:    'Regular buy',
-      subtitle: 'Standard position',
-      border:   'border-emerald-500/40',
-      bg:       'hover:bg-emerald-500/10',
-    },
-    {
-      value:    'test',
-      icon:     <Activity className="w-5 h-5 text-blue-400" />,
-      label:    'Small test position',
-      subtitle: 'Testing the thesis',
-      border:   'border-blue-500/40',
-      bg:       'hover:bg-blue-500/10',
-    },
+// Buy Modal
+const BuyModal = ({ symbol, price, cash, onClose, onBought }) => {
+  const maxQty    = Math.max(1, Math.floor(cash / Math.max(price, 0.01)))
+  const [qty, setQty]           = useState(1)
+  const [sentiment, setSentiment] = useState(null)
+  const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState(null)
+
+  const sentimentOptions = [
+    { value: 'high',    icon: <Zap className="w-5 h-5 text-yellow-400" />,   label: 'High conviction',      subtitle: 'Strong signal, sizing up' },
+    { value: 'regular', icon: <Check className="w-5 h-5 text-emerald-400" />, label: 'Regular buy',          subtitle: 'Standard position' },
+    { value: 'test',    icon: <Activity className="w-5 h-5 text-blue-400" />, label: 'Small test position',  subtitle: 'Testing the thesis' },
   ]
+
+  const totalCost = qty * (price || 0)
+
+  const handleBuy = async () => {
+    if (!sentiment) { setError('Pick a conviction level.'); return }
+    setError(null)
+    setLoading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const userId = session?.user?.id
+
+      const response = await fetch('/api/trade', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker: symbol, qty, side: 'buy', userId, price }),
+      })
+
+      if (!response.ok) {
+        const body = await response.json()
+        throw new Error(body.error || 'Buy failed')
+      }
+
+      if (price > 0) {
+        await recordTrade({ symbol, side: 'buy', quantity: qty, price, sentiment })
+      }
+
+      onBought()
+      onClose()
+    } catch (err) {
+      setError(err.message)
+      console.error('Buy error:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70">
-      <div className="w-full max-w-lg bg-[#1a1a1a] rounded-t-2xl border-t border-[#2a2a2a] p-5 space-y-3">
-        <div className="text-white font-bold text-base mb-1">What's your conviction level?</div>
-        {options.map(opt => (
-          <button
-            key={opt.value}
-            onClick={() => onPick(opt.value)}
-            className={`w-full flex items-center gap-4 px-4 py-4 rounded-xl border ${opt.border} bg-[#0f0f0f] ${opt.bg} transition text-left`}
-          >
-            {opt.icon}
-            <div>
-              <div className="text-white font-semibold text-sm">{opt.label}</div>
-              <div className="text-gray-500 text-xs">{opt.subtitle}</div>
+      <div className="w-full max-w-lg bg-[#1a1a1a] rounded-t-2xl border-t border-[#2a2a2a] p-5 space-y-4">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-white font-bold text-lg">{symbol}</div>
+            <div className="text-gray-400 text-xs">
+              ${Number(price).toFixed(2)} · <span className="text-emerald-400">${Number(cash).toLocaleString('en-US', { maximumFractionDigits: 2 })} available</span>
             </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-[#2a2a2a] rounded-lg transition">
+            <X className="w-5 h-5 text-gray-400" />
           </button>
-        ))}
+        </div>
+
+        {/* Quantity */}
+        <div className="space-y-1">
+          <label className="text-white text-sm font-semibold">Quantity</label>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setQty(q => Math.max(1, q - 1))}
+              className="w-10 h-10 rounded-lg bg-[#2a2a2a] hover:bg-[#333] text-white font-bold transition"
+            >−</button>
+            <input
+              type="number"
+              min={1}
+              max={maxQty}
+              value={qty}
+              onChange={e => setQty(Math.min(maxQty, Math.max(1, parseInt(e.target.value) || 1)))}
+              className="flex-1 bg-[#0f0f0f] border border-[#2a2a2a] text-white text-center px-4 py-2 rounded-lg"
+            />
+            <button
+              onClick={() => setQty(q => Math.min(maxQty, q + 1))}
+              className="w-10 h-10 rounded-lg bg-[#2a2a2a] hover:bg-[#333] text-white font-bold transition"
+            >+</button>
+          </div>
+          <div className="flex justify-between text-xs text-gray-500 pt-1">
+            <span>Total cost: <span className="text-white font-semibold">${totalCost.toFixed(2)}</span></span>
+            <button onClick={() => setQty(maxQty)} className="text-emerald-400 hover:underline">Max ({maxQty})</button>
+          </div>
+        </div>
+
+        {/* Sentiment */}
+        <div className="space-y-2">
+          <div className="text-white text-sm font-semibold">What's your conviction?</div>
+          {sentimentOptions.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setSentiment(opt.value)}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl border transition text-left ${
+                sentiment === opt.value
+                  ? 'border-emerald-500/60 bg-emerald-500/10'
+                  : 'border-[#2a2a2a] bg-[#0f0f0f] hover:bg-[#1a1a1a]'
+              }`}
+            >
+              {opt.icon}
+              <div>
+                <div className="text-white font-semibold text-sm">{opt.label}</div>
+                <div className="text-gray-500 text-xs">{opt.subtitle}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {error && <div className="text-red-400 text-sm">{error}</div>}
+
         <button
-          onClick={onCancel}
-          className="w-full py-3 text-gray-400 text-sm hover:text-white transition"
+          onClick={handleBuy}
+          disabled={loading || !sentiment}
+          className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold py-3 rounded-lg transition"
         >
-          Cancel
+          {loading ? 'Placing Order...' : `Confirm Buy · ${qty} share${qty > 1 ? 's' : ''} · $${totalCost.toFixed(2)}`}
         </button>
       </div>
     </div>
   )
 }
+
+// Low-conviction warning modal
+const LowConvictionWarning = ({ conviction, onConfirm, onCancel }) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-5">
+    <div className="w-full max-w-sm bg-[#1a1a1a] rounded-2xl border border-yellow-500/40 p-6 space-y-4">
+      <div className="flex items-center gap-3">
+        <AlertTriangle className="w-6 h-6 text-yellow-400 shrink-0" />
+        <div className="text-white font-bold text-base">Weak signal</div>
+      </div>
+      <p className="text-gray-300 text-sm leading-relaxed">
+        The AI doesn't recommend this trade. Conviction is only <span className="text-yellow-400 font-semibold">{conviction}%</span>. Are you sure you want to proceed?
+      </p>
+      <div className="flex gap-3">
+        <button
+          onClick={onCancel}
+          className="flex-1 py-2.5 rounded-lg border border-[#2a2a2a] text-gray-400 text-sm font-semibold hover:bg-[#2a2a2a] transition"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={onConfirm}
+          className="flex-1 py-2.5 rounded-lg bg-yellow-500/20 border border-yellow-500/40 text-yellow-400 text-sm font-semibold hover:bg-yellow-500/30 transition"
+        >
+          Yes, I understand
+        </button>
+      </div>
+    </div>
+  </div>
+)
 
 // AI Trader Screen
 const AITraderScreen = ({ onTradeSuccess }) => {
@@ -719,8 +819,10 @@ const AITraderScreen = ({ onTradeSuccess }) => {
   const [communityData, setCommunityData] = useState(null)
   const [topTradersData, setTopTradersData] = useState(null)
   const [showCommunityModal, setShowCommunityModal] = useState(false)
-  const [showSentimentPicker, setShowSentimentPicker] = useState(false)
+  const [showBuyModal, setShowBuyModal] = useState(false)
+  const [showLowConvWarning, setShowLowConvWarning] = useState(false)
   const [userPositions, setUserPositions] = useState([])
+  const [userCash, setUserCash] = useState(10000)
   const [sellTarget, setSellTarget] = useState(null)
 
   const popularTickers = ['NVDA', 'AAPL', 'TSLA', 'MSFT', 'META', 'AMZN', 'SPY', 'AMD', 'GOOGL', 'BTC-USD', 'ETH-USD', 'NFLX']
@@ -768,6 +870,7 @@ const AITraderScreen = ({ onTradeSuccess }) => {
       setCommunityData(communityJson)
       setTopTradersData(topTradersJson)
       setUserPositions(portfolioJson?.positions ?? [])
+      setUserCash(portfolioJson?.cash ?? 10000)
     } catch (err) {
       setError(err.message)
       console.error('Error:', err)
@@ -776,10 +879,7 @@ const AITraderScreen = ({ onTradeSuccess }) => {
     }
   }
 
-  const handlePlaceTrade = async (sentiment) => {
-    if (!signal || signal.signal !== 'BUY' || signal.conviction < 60) return
-
-    setShowSentimentPicker(false)
+  const handlePlaceTrade = async (sentiment, qty = 1) => {
     setTradeLoading(true)
     setToast(null)
 
@@ -792,7 +892,7 @@ const AITraderScreen = ({ onTradeSuccess }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ticker: tickerInput,
-          qty:    1,
+          qty,
           side:   'buy',
           userId: session?.user?.id,
           price:  entryPrice,
@@ -806,10 +906,9 @@ const AITraderScreen = ({ onTradeSuccess }) => {
 
       const data = await response.json()
       setToast(data.message)
-      console.log('Trade placed:', data)
 
       if (entryPrice > 0) {
-        await recordTrade({ symbol: tickerInput, side: 'buy', quantity: 1, price: entryPrice, sentiment })
+        await recordTrade({ symbol: tickerInput, side: 'buy', quantity: qty, price: entryPrice, sentiment })
       }
 
       if (onTradeSuccess) onTradeSuccess()
@@ -1175,41 +1274,77 @@ const AITraderScreen = ({ onTradeSuccess }) => {
               <CommunityModal ticker={tickerInput} onClose={() => setShowCommunityModal(false)} />
             )}
 
-            {/* Buy Button */}
+            {/* Primary action */}
             {signal.signal === 'BUY' && !lowConviction ? (
               <button
-                onClick={() => setShowSentimentPicker(true)}
+                onClick={() => setShowBuyModal(true)}
                 disabled={tradeLoading}
                 className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold py-3 rounded-lg transition"
               >
                 {tradeLoading ? 'Placing Order...' : 'Buy with Alpaca'}
               </button>
-            ) : lowConviction ? (
-              <div className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-gray-500 font-semibold py-3 rounded-lg text-center text-sm">
-                Conviction too low — wait for a better setup.
-              </div>
             ) : signal.signal === 'SELL' ? (() => {
               const held = userPositions.find(p => p.symbol === tickerInput.toUpperCase())
-              return held ? (
-                <button
-                  onClick={() => setSellTarget({ symbol: held.symbol, sharesOwned: Math.floor(held.qty), currentPrice: signal.entry })}
-                  disabled={tradeLoading}
-                  className="w-full bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white font-bold py-3 rounded-lg transition"
-                >
-                  Sell {held.symbol} with Alpaca
-                </button>
-              ) : (
-                <div className="w-full text-center font-semibold py-3 rounded-lg text-sm bg-red-500/10 text-red-400 border border-red-500/30">
-                  Sell Signal — you don't hold {tickerInput.toUpperCase()}
+              return (
+                <div className="space-y-2">
+                  {held ? (
+                    <button
+                      onClick={() => setSellTarget({ symbol: held.symbol, sharesOwned: Math.floor(held.qty), currentPrice: signal.entry })}
+                      disabled={tradeLoading}
+                      className="w-full bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white font-bold py-3 rounded-lg transition"
+                    >
+                      Sell {held.symbol} with Alpaca
+                    </button>
+                  ) : (
+                    <div className="w-full text-center font-semibold py-3 rounded-lg text-sm bg-red-500/10 text-red-400 border border-red-500/30">
+                      Sell Signal — you don't hold {tickerInput.toUpperCase()}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => setShowLowConvWarning(true)}
+                    className="w-full py-2.5 rounded-lg border border-[#2a2a2a] text-gray-500 text-sm font-semibold hover:text-gray-300 hover:border-[#3a3a3a] transition"
+                  >
+                    Buy anyway
+                  </button>
                 </div>
               )
             })() : (
-              <div className="w-full text-center font-semibold py-3 rounded-lg text-sm bg-yellow-500/10 text-yellow-400 border border-yellow-500/30">
-                Hold — no action recommended
+              <div className="space-y-2">
+                {lowConviction ? (
+                  <div className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-gray-500 text-sm text-center py-3 rounded-lg">
+                    AI conviction only {signal.conviction}% — weak setup
+                  </div>
+                ) : (
+                  <div className="w-full text-center font-semibold py-3 rounded-lg text-sm bg-yellow-500/10 text-yellow-400 border border-yellow-500/30">
+                    Hold — no action recommended
+                  </div>
+                )}
+                <button
+                  onClick={() => setShowLowConvWarning(true)}
+                  className="w-full py-2.5 rounded-lg border border-[#2a2a2a] text-gray-500 text-sm font-semibold hover:text-gray-300 hover:border-[#3a3a3a] transition"
+                >
+                  Buy anyway
+                </button>
               </div>
             )}
 
-            {/* Sell Modal (from signal card) */}
+            {/* Modals */}
+            {showBuyModal && (
+              <BuyModal
+                symbol={tickerInput.toUpperCase()}
+                price={Number(signal.entry)}
+                cash={userCash}
+                onClose={() => setShowBuyModal(false)}
+                onBought={() => { setShowBuyModal(false); setToast(`Bought ${tickerInput.toUpperCase()}`); if (onTradeSuccess) onTradeSuccess() }}
+              />
+            )}
+            {showLowConvWarning && (
+              <LowConvictionWarning
+                conviction={signal.conviction}
+                onCancel={() => setShowLowConvWarning(false)}
+                onConfirm={() => { setShowLowConvWarning(false); setShowBuyModal(true) }}
+              />
+            )}
             {sellTarget && (
               <SellModal
                 symbol={sellTarget.symbol}
@@ -1217,14 +1352,6 @@ const AITraderScreen = ({ onTradeSuccess }) => {
                 currentPrice={sellTarget.currentPrice}
                 onClose={() => setSellTarget(null)}
                 onSold={() => { setSellTarget(null); if (onTradeSuccess) onTradeSuccess() }}
-              />
-            )}
-
-            {/* Sentiment picker */}
-            {showSentimentPicker && (
-              <SentimentPickerModal
-                onPick={handlePlaceTrade}
-                onCancel={() => setShowSentimentPicker(false)}
               />
             )}
 
