@@ -101,10 +101,14 @@ const ProgressBar = ({ value, color = 'bg-emerald-500' }) => (
 
 // Portfolio Screen
 const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
-  const [positions, setPositions] = useState([])
-  const [prices, setPrices]       = useState({})   // symbol -> current price
-  const [loading, setLoading]     = useState(true)
-  const [error, setError]         = useState(null)
+  const [positions, setPositions]         = useState([])
+  const [prices, setPrices]               = useState({})
+  const [cash, setCash]                   = useState(0)
+  const [positionsValue, setPositionsValue] = useState(0)
+  const [totalEquity, setTotalEquity]     = useState(0)
+  const [totalPnl, setTotalPnl]           = useState(0)
+  const [loading, setLoading]             = useState(true)
+  const [error, setError]                 = useState(null)
 
   useEffect(() => {
     loadPortfolio()
@@ -127,7 +131,7 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error || `HTTP ${res.status}`)
       }
-      const { positions: raw } = await res.json()
+      const { positions: raw, cash: cashVal, positionsValue: posVal, totalEquity: equityVal, totalPnl: pnlVal } = await res.json()
 
       setPositions((raw || []).map(p => ({
         symbol:        p.symbol,
@@ -141,6 +145,10 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
         if (p.currentPrice != null) priceMap[p.symbol] = p.currentPrice
       }
       setPrices(priceMap)
+      setCash(cashVal ?? 0)
+      setPositionsValue(posVal ?? 0)
+      setTotalEquity(equityVal ?? 0)
+      setTotalPnl(pnlVal ?? 0)
     } catch (err) {
       console.error('Error loading portfolio:', err)
       setError(err.message)
@@ -150,14 +158,6 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
   }
 
   const fmt = (n) => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-
-  const totalEquity = positions.reduce((sum, p) => {
-    const currentPrice = prices[p.symbol] ?? p.avgEntryPrice
-    return sum + p.qty * currentPrice
-  }, 0)
-
-  const totalCostBasis = positions.reduce((sum, p) => sum + p.costBasis, 0)
-  const totalPL = totalEquity - totalCostBasis
 
   if (loading) {
     return (
@@ -211,19 +211,23 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
 
       {/* Account Overview */}
       <div className="bg-[#1a1a1a] rounded-2xl p-6 border border-[#2a2a2a]">
-        <p className="text-gray-400 text-sm mb-2">Total Portfolio Value</p>
+        <p className="text-gray-400 text-sm mb-2">Total Equity</p>
         <div className="text-5xl font-bold text-white mb-2">
           ${fmt(totalEquity)}
         </div>
-        <div className="grid grid-cols-2 gap-4 mt-4">
+        <div className="grid grid-cols-3 gap-4 mt-4">
           <div>
-            <p className="text-gray-400 text-xs">Cost Basis</p>
-            <p className="text-white font-semibold">${fmt(totalCostBasis)}</p>
+            <p className="text-gray-400 text-xs">Cash</p>
+            <p className="text-white font-semibold">${fmt(cash)}</p>
           </div>
           <div>
-            <p className="text-gray-400 text-xs">Total P&L</p>
-            <p className={`font-semibold ${totalPL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-              {totalPL >= 0 ? '+' : ''}${fmt(totalPL)}
+            <p className="text-gray-400 text-xs">Positions Value</p>
+            <p className="text-white font-semibold">${fmt(positionsValue)}</p>
+          </div>
+          <div>
+            <p className="text-gray-400 text-xs">Unrealized P&L</p>
+            <p className={`font-semibold ${totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              {totalPnl >= 0 ? '+' : ''}${fmt(totalPnl)}
             </p>
           </div>
         </div>
@@ -339,15 +343,18 @@ const AITraderScreen = ({ onTradeSuccess }) => {
     setToast(null)
 
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const entryPrice = parseFloat(String(signal.entry).replace(/[^0-9.]/g, '')) || 0
+
       const response = await fetch('/api/trade', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ticker: tickerInput,
-          qty: 1,
-          side: 'buy'
+          qty:    1,
+          side:   'buy',
+          userId: session?.user?.id,
+          price:  entryPrice,
         })
       })
 
@@ -360,13 +367,11 @@ const AITraderScreen = ({ onTradeSuccess }) => {
       setToast(data.message)
       console.log('Trade placed:', data)
 
-      // Record the trade in Supabase so the portfolio stays per-user
-      const entryPrice = parseFloat(String(signal.entry).replace(/[^0-9.]/g, ''))
+      // Record the trade in Supabase for per-user portfolio history
       if (entryPrice > 0) {
         await recordTrade({ symbol: tickerInput, side: 'buy', quantity: 1, price: entryPrice })
       }
 
-      // Trigger portfolio refresh
       if (onTradeSuccess) {
         onTradeSuccess()
       }

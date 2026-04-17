@@ -1,3 +1,5 @@
+import { createClient } from '@supabase/supabase-js'
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
 
@@ -6,47 +8,85 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { ticker, side, qty = 1 } = req.body
+    const { ticker, side, qty = 1, userId, price } = req.body
 
     if (!ticker || !side) {
       return res.status(400).json({ error: 'Ticker and side are required' })
     }
 
     const headers = {
-      'APCA-API-KEY-ID': process.env.ALPACA_API_KEY,
+      'APCA-API-KEY-ID':     process.env.ALPACA_API_KEY,
       'APCA-API-SECRET-KEY': process.env.ALPACA_SECRET_KEY,
-      'Content-Type': 'application/json'
+      'Content-Type':        'application/json',
     }
 
     const orderData = {
-      symbol: ticker.toUpperCase(),
-      qty: qty,
-      side: side.toLowerCase(),
-      type: 'market',
-      time_in_force: 'day'
+      symbol:        ticker.toUpperCase(),
+      qty:           qty,
+      side:          side.toLowerCase(),
+      type:          'market',
+      time_in_force: 'day',
     }
 
     const response = await fetch('https://paper-api.alpaca.markets/v2/orders', {
       method: 'POST',
       headers,
-      body: JSON.stringify(orderData)
+      body: JSON.stringify(orderData),
     })
 
     if (!response.ok) {
       const errorData = await response.text()
       console.error('Alpaca API error:', response.status, errorData)
       return res.status(response.status).json({
-        error: `Failed to place ${side} order: ${errorData}`
+        error: `Failed to place ${side} order: ${errorData}`,
       })
     }
 
     const order = await response.json()
     console.log('Order placed successfully:', order)
 
+    // Update cash balance if we have a userId
+    if (userId) {
+      try {
+        const supabase = createClient(
+          process.env.SUPABASE_URL,
+          process.env.SUPABASE_SERVICE_ROLE_KEY
+        )
+
+        // Use fill price from Alpaca if available, otherwise fall back to the
+        // client-supplied price estimate (signal entry price)
+        const fillPrice = parseFloat(order.filled_avg_price) || parseFloat(price) || 0
+        const tradeQty  = parseFloat(qty)
+        const cashDelta = side.toLowerCase() === 'buy'
+          ? -(tradeQty * fillPrice)
+          :  (tradeQty * fillPrice)
+
+        // Get current balance (or default to $10,000 if no row yet)
+        const { data: balanceRow } = await supabase
+          .from('user_balances')
+          .select('cash')
+          .eq('user_id', userId)
+          .single()
+
+        const currentCash = balanceRow ? parseFloat(balanceRow.cash) : 10000
+        const newCash     = currentCash + cashDelta
+
+        await supabase
+          .from('user_balances')
+          .upsert(
+            { user_id: userId, cash: newCash, updated_at: new Date().toISOString() },
+            { onConflict: 'user_id' }
+          )
+      } catch (cashErr) {
+        // Cash update failure is non-fatal — order already went through
+        console.error('Cash update error:', cashErr.message)
+      }
+    }
+
     return res.status(200).json({
       success: true,
       order,
-      message: `${side.toUpperCase()} order for ${qty} share${qty > 1 ? 's' : ''} of ${ticker.toUpperCase()} placed successfully`
+      message: `${side.toUpperCase()} order for ${qty} share${qty > 1 ? 's' : ''} of ${ticker.toUpperCase()} placed successfully`,
     })
 
   } catch (error) {

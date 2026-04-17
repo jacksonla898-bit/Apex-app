@@ -57,8 +57,31 @@ export default async function handler(req, res) {
         costBasis:     v.totalCost,
       }))
 
+    // Get or seed cash balance
+    let cash = 10000
+    const { data: balanceRow } = await supabase
+      .from('user_balances')
+      .select('cash')
+      .eq('user_id', userId)
+      .single()
+
+    if (balanceRow) {
+      cash = parseFloat(balanceRow.cash)
+    } else {
+      // First time — insert default $10,000
+      await supabase
+        .from('user_balances')
+        .insert({ user_id: userId, cash: 10000 })
+    }
+
     if (positions.length === 0) {
-      return res.status(200).json({ positions: [], totalValue: 0, totalPnl: 0 })
+      return res.status(200).json({
+        positions:      [],
+        cash,
+        positionsValue: 0,
+        totalEquity:    cash,
+        totalPnl:       0,
+      })
     }
 
     // Fetch current prices from Alpaca snapshots
@@ -104,10 +127,11 @@ export default async function handler(req, res) {
       }
     })
 
-    const totalValue = enriched.reduce((sum, p) => sum + p.currentValue, 0)
-    const totalPnl   = enriched.reduce((sum, p) => sum + p.unrealizedPnl,  0)
+    const positionsValue = enriched.reduce((sum, p) => sum + p.currentValue, 0)
+    const totalPnl       = enriched.reduce((sum, p) => sum + p.unrealizedPnl, 0)
+    const totalEquity    = cash + positionsValue
 
-    return res.status(200).json({ positions: enriched, totalValue, totalPnl })
+    return res.status(200).json({ positions: enriched, cash, positionsValue, totalEquity, totalPnl })
   } catch (err) {
     console.error('user-portfolio error:', err)
     return res.status(500).json({ error: err.message })
