@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 // Anon key is a public credential — safe to commit (Supabase security is RLS-based).
 // Env vars are preferred; these are fallbacks so login works if Vercel vars are missing.
 const supabaseUrl     = import.meta.env.VITE_SUPABASE_URL      || 'https://avsfhaiuxuwytvsqhgjz.supabase.co'
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_8yLZYDO-7ICthpQl-ZPvMw_UZ3jawd1'
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2c2ZoYWl1eHV3eXR2c3FoZ2p6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2OTc1MTMsImV4cCI6MjA5MTI3MzUxM30.Ssz6J79LcC_SXJkO4amD0ivq2rP0CGbsh3i5M_nL8Qk'
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
