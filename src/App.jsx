@@ -18,6 +18,11 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
+  Users,
+  X,
+  ArrowUp,
+  ArrowDown,
+  Activity,
 } from 'lucide-react'
 
 // Toast notification component
@@ -295,6 +300,175 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
   )
 }
 
+// Time-ago helper
+function timeAgo(isoString) {
+  const secs = Math.floor((Date.now() - new Date(isoString)) / 1000)
+  if (secs < 60)  return `${secs}s ago`
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`
+  return `${Math.floor(secs / 86400)}d ago`
+}
+
+// Community Details Modal
+const CommunityModal = ({ ticker, onClose }) => {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    fetch(`/api/community-details?symbol=${encodeURIComponent(ticker)}`)
+      .then(r => r.ok ? r.json() : Promise.reject(r))
+      .then(setData)
+      .catch(() => setError('Failed to load community data'))
+      .finally(() => setLoading(false))
+  }, [ticker])
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#0f0f0f]">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2a2a] bg-[#1a1a1a] shrink-0">
+        <div>
+          <div className="text-white font-bold text-lg">{ticker.toUpperCase()}</div>
+          <div className="text-gray-400 text-xs">Community Conviction</div>
+        </div>
+        <button onClick={onClose} className="p-2 rounded-lg hover:bg-[#2a2a2a] transition">
+          <X className="w-5 h-5 text-gray-400" />
+        </button>
+      </div>
+
+      {/* Scrollable body */}
+      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
+        {loading && <Spinner />}
+        {error && (
+          <div className="bg-red-500/20 border border-red-500/40 rounded-lg p-4 text-red-300 text-sm">{error}</div>
+        )}
+
+        {data && (
+          <>
+            {/* Bullish / Bearish / Neutral bars */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <span className="text-gray-400 text-xs w-16 shrink-0">Bullish</span>
+                <div className="flex-1 bg-[#1a1a1a] rounded-full h-2">
+                  <div className="h-2 rounded-full bg-emerald-500" style={{ width: `${data.bullishPct}%` }} />
+                </div>
+                <span className="text-emerald-400 text-xs font-bold w-9 text-right">{data.bullishPct}%</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-gray-400 text-xs w-16 shrink-0">Bearish</span>
+                <div className="flex-1 bg-[#1a1a1a] rounded-full h-2">
+                  <div className="h-2 rounded-full bg-red-500" style={{ width: `${data.bearishPct}%` }} />
+                </div>
+                <span className="text-red-400 text-xs font-bold w-9 text-right">{data.bearishPct}%</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-gray-400 text-xs w-16 shrink-0">Neutral</span>
+                <div className="flex-1 bg-[#1a1a1a] rounded-full h-2">
+                  <div className="h-2 rounded-full bg-gray-500" style={{ width: `${data.neutralPct}%` }} />
+                </div>
+                <span className="text-gray-400 text-xs font-bold w-9 text-right">{data.neutralPct}%</span>
+              </div>
+            </div>
+
+            {/* 24h change */}
+            <div className="flex items-center gap-2 bg-[#1a1a1a] rounded-lg px-4 py-3 border border-[#2a2a2a]">
+              {data.bullishChange24h > 0
+                ? <ArrowUp className="w-4 h-4 text-emerald-400 shrink-0" />
+                : data.bullishChange24h < 0
+                ? <ArrowDown className="w-4 h-4 text-red-400 shrink-0" />
+                : <Activity className="w-4 h-4 text-gray-500 shrink-0" />
+              }
+              <span className={`text-sm font-semibold ${data.bullishChange24h > 0 ? 'text-emerald-400' : data.bullishChange24h < 0 ? 'text-red-400' : 'text-gray-400'}`}>
+                {data.bullishChange24h > 0 ? '+' : ''}{data.bullishChange24h}% bullish in 24h
+              </span>
+              <span className="text-gray-500 text-xs">
+                {data.bullishChange24h > 0 ? '(momentum growing)' : data.bullishChange24h < 0 ? '(cooling off)' : '(no change)'}
+              </span>
+            </div>
+
+            {/* Top Holders */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Users className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-white text-xs font-semibold uppercase tracking-wider">Top Holders</span>
+                <span className="text-gray-500 text-xs">({data.holderCount} total)</span>
+              </div>
+              {data.allHolders.length === 0 ? (
+                <div className="text-gray-500 text-sm">No holders yet.</div>
+              ) : (
+                <div className="space-y-2">
+                  {data.allHolders.slice(0, 10).map((h, i) => (
+                    <div key={h.userId} className="flex items-center justify-between bg-[#1a1a1a] rounded-lg px-4 py-3 border border-[#2a2a2a]">
+                      <div className="flex items-center gap-3">
+                        <span className="text-gray-500 text-xs w-4">{i + 1}</span>
+                        <div>
+                          <div className="text-white text-sm font-mono">{h.userId.slice(0, 8)}…</div>
+                          <div className="text-gray-500 text-xs">{h.shares.toFixed(4)} shares @ ${h.avgEntryPrice.toFixed(2)}</div>
+                        </div>
+                      </div>
+                      <div className="text-emerald-400 text-sm font-semibold">${h.positionValue.toFixed(2)}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Whales */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <TrendingUp className="w-3.5 h-3.5 text-blue-400" />
+                <span className="text-white text-xs font-semibold uppercase tracking-wider">Whales</span>
+                <span className="text-gray-500 text-xs">(≥$10,000 position)</span>
+              </div>
+              {data.whales.length === 0 ? (
+                <div className="text-gray-500 text-sm bg-[#1a1a1a] rounded-lg px-4 py-3 border border-[#2a2a2a]">No whale positions yet.</div>
+              ) : (
+                <div className="space-y-2">
+                  {data.whales.map((w) => (
+                    <div key={w.userId} className="flex items-center justify-between bg-[#1a1a1a] rounded-lg px-4 py-3 border border-[#2a2a2a]">
+                      <div>
+                        <div className="text-white text-sm font-mono">{w.userId.slice(0, 8)}…</div>
+                        <div className="text-emerald-400 text-xs">{w.sentiment}</div>
+                      </div>
+                      <div className="text-blue-400 text-sm font-semibold">${w.positionValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Recent Activity */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Activity className="w-3.5 h-3.5 text-yellow-400" />
+                <span className="text-white text-xs font-semibold uppercase tracking-wider">Recent Activity</span>
+              </div>
+              {data.recentActivity.length === 0 ? (
+                <div className="text-gray-500 text-sm">No activity yet.</div>
+              ) : (
+                <div className="space-y-2">
+                  {data.recentActivity.map((t, i) => (
+                    <div key={i} className="flex items-center justify-between bg-[#1a1a1a] rounded-lg px-4 py-2.5 border border-[#2a2a2a]">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${t.side === 'buy' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                          {t.side === 'buy' ? 'BUY' : 'SELL'}
+                        </span>
+                        <span className="text-gray-300 text-xs font-mono">{t.userId.slice(0, 8)}…</span>
+                        <span className="text-gray-500 text-xs">{t.quantity} shares @ ${t.price.toFixed(2)}</span>
+                      </div>
+                      <span className="text-gray-600 text-xs shrink-0 ml-2">{timeAgo(t.createdAt)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // AI Trader Screen
 const AITraderScreen = ({ onTradeSuccess }) => {
   const [tickerInput, setTickerInput] = useState('AAPL')
@@ -308,6 +482,7 @@ const AITraderScreen = ({ onTradeSuccess }) => {
   const [showFullAnalysis, setShowFullAnalysis] = useState(false)
   const [communityData, setCommunityData] = useState(null)
   const [topTradersData, setTopTradersData] = useState(null)
+  const [showCommunityModal, setShowCommunityModal] = useState(false)
 
   const popularTickers = ['NVDA', 'AAPL', 'TSLA', 'MSFT', 'META', 'AMZN', 'SPY', 'AMD', 'GOOGL', 'BTC-USD', 'ETH-USD', 'NFLX']
 
@@ -714,25 +889,39 @@ const AITraderScreen = ({ onTradeSuccess }) => {
               </div>
             )}
 
-            {/* Collapsible Full Analysis */}
-            {signal.fullAnalysis && (
-              <div className="border border-[#2a2a2a] rounded-lg overflow-hidden">
-                <button
-                  onClick={() => setShowFullAnalysis(v => !v)}
-                  className="w-full flex items-center justify-between px-4 py-3 bg-[#1a1a1a] hover:bg-[#222] transition text-left"
-                >
-                  <span className="text-white text-xs font-semibold uppercase tracking-wider">Full Analysis</span>
-                  {showFullAnalysis
-                    ? <ChevronUp className="w-4 h-4 text-gray-400" />
-                    : <ChevronDown className="w-4 h-4 text-gray-400" />
-                  }
-                </button>
-                {showFullAnalysis && (
-                  <div className="px-4 py-3 bg-[#0f0f0f]">
-                    <p className="text-gray-300 text-sm leading-relaxed">{signal.fullAnalysis}</p>
-                  </div>
-                )}
-              </div>
+            {/* Collapsible Full Analysis + Community button row */}
+            <div className="grid grid-cols-2 gap-2">
+              {signal.fullAnalysis && (
+                <div className="border border-[#2a2a2a] rounded-lg overflow-hidden col-span-1">
+                  <button
+                    onClick={() => setShowFullAnalysis(v => !v)}
+                    className="w-full flex items-center justify-between px-4 py-3 bg-[#1a1a1a] hover:bg-[#222] transition text-left"
+                  >
+                    <span className="text-white text-xs font-semibold uppercase tracking-wider">Full Analysis</span>
+                    {showFullAnalysis
+                      ? <ChevronUp className="w-4 h-4 text-gray-400" />
+                      : <ChevronDown className="w-4 h-4 text-gray-400" />
+                    }
+                  </button>
+                  {showFullAnalysis && (
+                    <div className="px-4 py-3 bg-[#0f0f0f]">
+                      <p className="text-gray-300 text-sm leading-relaxed">{signal.fullAnalysis}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              <button
+                onClick={() => setShowCommunityModal(true)}
+                className="flex items-center justify-center gap-2 px-4 py-3 bg-[#1a1a1a] hover:bg-[#222] border border-[#2a2a2a] rounded-lg transition col-span-1"
+              >
+                <Users className="w-4 h-4 text-emerald-400" />
+                <span className="text-white text-xs font-semibold uppercase tracking-wider">Community</span>
+              </button>
+            </div>
+
+            {/* Community Modal */}
+            {showCommunityModal && (
+              <CommunityModal ticker={tickerInput} onClose={() => setShowCommunityModal(false)} />
             )}
 
             {/* Buy Button */}
