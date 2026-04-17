@@ -307,6 +307,7 @@ const AITraderScreen = ({ onTradeSuccess }) => {
   const [toast, setToast] = useState(null)
   const [showFullAnalysis, setShowFullAnalysis] = useState(false)
   const [communityData, setCommunityData] = useState(null)
+  const [topTradersData, setTopTradersData] = useState(null)
 
   const popularTickers = ['NVDA', 'AAPL', 'TSLA', 'MSFT', 'META', 'AMZN', 'SPY', 'AMD', 'GOOGL', 'BTC-USD', 'ETH-USD', 'NFLX']
 
@@ -315,29 +316,33 @@ const AITraderScreen = ({ onTradeSuccess }) => {
     setError(null)
     setSignal(null)
     setCommunityData(null)
+    setTopTradersData(null)
     setShowFullAnalysis(false)
 
     try {
-      const [signalRes, communityRes] = await Promise.all([
+      const [signalRes, communityRes, topTradersRes] = await Promise.all([
         fetch('/api/signal', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ticker: tickerInput, timeframe, risk })
         }),
         fetch(`/api/community-conviction?symbol=${encodeURIComponent(tickerInput)}`),
+        fetch(`/api/top-traders?symbol=${encodeURIComponent(tickerInput)}`),
       ])
 
       if (!signalRes.ok) {
         throw new Error('Failed to generate signal')
       }
 
-      const [signalData, communityJson] = await Promise.all([
+      const [signalData, communityJson, topTradersJson] = await Promise.all([
         signalRes.json(),
         communityRes.ok ? communityRes.json() : null,
+        topTradersRes.ok ? topTradersRes.json() : null,
       ])
 
       setSignal(signalData)
       setCommunityData(communityJson)
+      setTopTradersData(topTradersJson)
     } catch (err) {
       setError(err.message)
       console.error('Error:', err)
@@ -409,7 +414,9 @@ const AITraderScreen = ({ onTradeSuccess }) => {
 
   const overallConviction = signal
     ? Math.round(
-        communityData
+        communityData && topTradersData
+          ? signal.conviction * 0.4 + topTradersData.topTraderBullishPct * 0.35 + communityData.bullishPct * 0.25
+          : communityData
           ? signal.conviction * 0.5 + communityData.bullishPct * 0.5
           : signal.conviction
       )
@@ -577,16 +584,31 @@ const AITraderScreen = ({ onTradeSuccess }) => {
                 </div>
               </div>
 
-              {/* Top Traders row — placeholder */}
+              {/* Top Traders row */}
               <div className="flex items-center justify-between px-4 py-3">
                 <div className="flex items-center gap-2">
                   <Zap className="w-4 h-4 text-yellow-400 shrink-0" />
                   <div>
                     <div className="text-white text-sm font-medium">Top Traders</div>
-                    <div className="text-gray-500 text-xs">Expert signals</div>
+                    {topTradersData && topTradersData.topTraderCount > 0 ? (
+                      <div className={`text-xs ${topTradersData.topTraderHolderCount > 0 ? 'text-gray-500' : 'text-gray-600'}`}>
+                        {topTradersData.topTraderHolderCount} of {topTradersData.topTraderCount} top traders holding
+                      </div>
+                    ) : (
+                      <div className="text-gray-600 text-xs">No top traders yet</div>
+                    )}
                   </div>
                 </div>
-                <div className="text-gray-500 text-xs italic">Coming soon</div>
+                <div className="text-right">
+                  {topTradersData && topTradersData.topTraderCount > 0 ? (
+                    <>
+                      <div className="text-white text-sm font-bold">{topTradersData.topTraderBullishPct}%</div>
+                      <div className="text-gray-500 text-xs">bullish</div>
+                    </>
+                  ) : (
+                    <div className="text-gray-500 text-xs">—</div>
+                  )}
+                </div>
               </div>
             </div>
 
