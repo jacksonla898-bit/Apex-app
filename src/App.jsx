@@ -306,6 +306,7 @@ const AITraderScreen = ({ onTradeSuccess }) => {
   const [tradeLoading, setTradeLoading] = useState(false)
   const [toast, setToast] = useState(null)
   const [showFullAnalysis, setShowFullAnalysis] = useState(false)
+  const [communityData, setCommunityData] = useState(null)
 
   const popularTickers = ['NVDA', 'AAPL', 'TSLA', 'MSFT', 'META', 'AMZN', 'SPY', 'AMD', 'GOOGL', 'BTC-USD', 'ETH-USD', 'NFLX']
 
@@ -313,21 +314,30 @@ const AITraderScreen = ({ onTradeSuccess }) => {
     setLoading(true)
     setError(null)
     setSignal(null)
+    setCommunityData(null)
     setShowFullAnalysis(false)
 
     try {
-      const response = await fetch('/api/signal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker: tickerInput, timeframe, risk })
-      })
+      const [signalRes, communityRes] = await Promise.all([
+        fetch('/api/signal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ticker: tickerInput, timeframe, risk })
+        }),
+        fetch(`/api/community-conviction?symbol=${encodeURIComponent(tickerInput)}`),
+      ])
 
-      if (!response.ok) {
+      if (!signalRes.ok) {
         throw new Error('Failed to generate signal')
       }
 
-      const data = await response.json()
-      setSignal(data)
+      const [signalData, communityJson] = await Promise.all([
+        signalRes.json(),
+        communityRes.ok ? communityRes.json() : null,
+      ])
+
+      setSignal(signalData)
+      setCommunityData(communityJson)
     } catch (err) {
       setError(err.message)
       console.error('Error:', err)
@@ -396,6 +406,14 @@ const AITraderScreen = ({ onTradeSuccess }) => {
         { label: 'Fundamentals', value: signal.scorecard.fundamentals },
       ]
     : []
+
+  const overallConviction = signal
+    ? Math.round(
+        communityData
+          ? signal.conviction * 0.5 + communityData.bullishPct * 0.5
+          : signal.conviction
+      )
+    : null
 
   const lowConviction = signal && signal.conviction < 60
 
@@ -495,21 +513,80 @@ const AITraderScreen = ({ onTradeSuccess }) => {
 
           <div className="p-5 space-y-5">
 
-            {/* Verdict + Conviction Bar */}
+            {/* Verdict + Overall Conviction */}
             <div className={`rounded-xl p-4 ${verdictStyle.bg}`}>
               <div className="flex items-center justify-between mb-3">
                 <span className={`text-2xl font-extrabold tracking-wide ${verdictStyle.text}`}>
                   {signal.signal}
                 </span>
                 <span className={`text-xs font-bold px-3 py-1 rounded-full text-white ${verdictStyle.badgeBg}`}>
-                  {signal.conviction}% conviction
+                  {overallConviction}% overall conviction
                 </span>
               </div>
               <div className="w-full bg-[#0f0f0f] rounded-full h-2">
                 <div
                   className={`h-2 rounded-full transition-all ${verdictStyle.badgeBg}`}
-                  style={{ width: `${signal.conviction}%` }}
+                  style={{ width: `${overallConviction}%` }}
                 />
+              </div>
+            </div>
+
+            {/* Conviction Stack */}
+            <div className="rounded-xl border border-[#2a2a2a] overflow-hidden">
+              <div className="px-4 py-2 bg-[#1a1a1a] border-b border-[#2a2a2a]">
+                <span className="text-white text-xs font-semibold uppercase tracking-wider">The Conviction Stack</span>
+              </div>
+
+              {/* AI Signal row */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[#2a2a2a]">
+                <div className="flex items-center gap-2">
+                  <Bot className="w-4 h-4 text-blue-400 shrink-0" />
+                  <div>
+                    <div className="text-white text-sm font-medium">AI Signal</div>
+                    <div className="text-gray-500 text-xs">{signal.signal} — model analysis</div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-white text-sm font-bold">{signal.conviction}%</div>
+                  <div className="text-gray-500 text-xs">bullish</div>
+                </div>
+              </div>
+
+              {/* Community row */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[#2a2a2a]">
+                <div className="flex items-center gap-2">
+                  <User className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <div>
+                    <div className="text-white text-sm font-medium">Community</div>
+                    {communityData && communityData.holderCount > 0 ? (
+                      <div className="text-gray-500 text-xs">{communityData.holderCount} trader{communityData.holderCount !== 1 ? 's' : ''} holding</div>
+                    ) : (
+                      <div className="text-gray-500 text-xs">Be the first to trade this</div>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right">
+                  {communityData ? (
+                    <>
+                      <div className="text-white text-sm font-bold">{communityData.bullishPct}%</div>
+                      <div className="text-gray-500 text-xs">bullish</div>
+                    </>
+                  ) : (
+                    <div className="text-gray-500 text-xs">—</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Top Traders row — placeholder */}
+              <div className="flex items-center justify-between px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-yellow-400 shrink-0" />
+                  <div>
+                    <div className="text-white text-sm font-medium">Top Traders</div>
+                    <div className="text-gray-500 text-xs">Expert signals</div>
+                  </div>
+                </div>
+                <div className="text-gray-500 text-xs italic">Coming soon</div>
               </div>
             </div>
 
