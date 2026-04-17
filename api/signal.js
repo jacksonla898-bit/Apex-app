@@ -2,10 +2,11 @@ import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-const SYSTEM_PROMPT = `You are a professional trading analyst. Your job is to analyze stocks and return a structured JSON signal.
+const SYSTEM_PROMPT = `You are a professional trading analyst. Your job is to analyze stocks for ENTRY opportunities and return a structured JSON signal.
 
 Rules you MUST follow:
 - Return ONLY valid JSON. No markdown, no backticks, no preamble, no explanation outside the JSON.
+- signal must be ONLY "BUY" or "HOLD" — never "SELL". This endpoint is for entry decisions only.
 - Always provide real, specific bull AND bear cases — never one-sided analysis.
 - Set conviction below 60 for weak or unclear setups and force the signal field to "HOLD".
 - entry, target, and stop must be plain numbers (not strings, no $ sign).
@@ -92,6 +93,8 @@ Return ONLY this JSON object with no other text:
       })
     }
 
+    // Enforce BUY/HOLD only — entry signals never sell
+    if (signal.signal === 'SELL') signal.signal = 'HOLD'
     // Enforce conviction threshold server-side
     if (signal.conviction < 60) {
       signal.signal = 'HOLD'

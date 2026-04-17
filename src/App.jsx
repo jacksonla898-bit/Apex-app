@@ -240,6 +240,177 @@ const SellModal = ({ symbol, sharesOwned, currentPrice, onClose, onSold }) => {
   )
 }
 
+// Exit Signal Modal
+const ExitSignalModal = ({ symbol, userId, currentPrice, onClose, onSell }) => {
+  const [data, setData]     = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError]   = useState(null)
+
+  useEffect(() => {
+    fetch('/api/exit-signal', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ symbol, userId }),
+    })
+      .then(r => r.ok ? r.json() : r.json().then(b => Promise.reject(b.error || 'Failed')))
+      .then(setData)
+      .catch(e => setError(typeof e === 'string' ? e : 'Failed to load exit signal'))
+      .finally(() => setLoading(false))
+  }, [symbol, userId])
+
+  const actionStyle = data
+    ? data.action === 'SELL'
+      ? { text: 'text-red-400',    badge: 'bg-red-500',     border: 'border-red-500/40',    bg: 'bg-red-500/10' }
+      : data.action === 'TRIM'
+      ? { text: 'text-yellow-400', badge: 'bg-yellow-500',  border: 'border-yellow-500/40', bg: 'bg-yellow-500/10' }
+      : { text: 'text-emerald-400', badge: 'bg-emerald-500', border: 'border-emerald-500/40', bg: 'bg-emerald-500/10' }
+    : null
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#0f0f0f]">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2a2a] bg-[#1a1a1a] shrink-0">
+        <div>
+          <div className="text-white font-bold text-lg">{symbol}</div>
+          <div className="text-gray-400 text-xs">AI Exit Analysis</div>
+        </div>
+        <button onClick={onClose} className="p-2 rounded-lg hover:bg-[#2a2a2a] transition">
+          <X className="w-5 h-5 text-gray-400" />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
+        {loading && <Spinner />}
+        {error && <div className="bg-red-500/20 border border-red-500/40 rounded-lg p-4 text-red-300 text-sm">{error}</div>}
+
+        {data && (
+          <>
+            {/* Entry vs Current + P&L */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-[#1a1a1a] rounded-lg p-3 border border-[#2a2a2a] text-center">
+                <div className="text-xs text-gray-400 mb-1">Entry</div>
+                <div className="text-white font-semibold text-sm">${data.avgEntryPrice.toFixed(2)}</div>
+              </div>
+              <div className="bg-[#1a1a1a] rounded-lg p-3 border border-[#2a2a2a] text-center">
+                <div className="text-xs text-gray-400 mb-1">Current</div>
+                <div className="text-white font-semibold text-sm">${data.currentPrice.toFixed(2)}</div>
+              </div>
+              <div className={`bg-[#1a1a1a] rounded-lg p-3 border border-[#2a2a2a] text-center`}>
+                <div className="text-xs text-gray-400 mb-1">P&L</div>
+                <div className={`font-semibold text-sm ${data.currentPnl.dollars >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {data.currentPnl.dollars >= 0 ? '+' : ''}{data.currentPnl.percent.toFixed(1)}%
+                </div>
+              </div>
+            </div>
+
+            {/* Action + conviction */}
+            <div className={`rounded-xl p-4 ${actionStyle.bg} border ${actionStyle.border}`}>
+              <div className="flex items-center justify-between mb-3">
+                <span className={`text-2xl font-extrabold tracking-wide ${actionStyle.text}`}>
+                  {data.action}
+                </span>
+                <span className={`text-xs font-bold px-3 py-1 rounded-full text-white ${actionStyle.badge}`}>
+                  {data.conviction}% conviction
+                </span>
+              </div>
+              <div className="w-full bg-[#0f0f0f] rounded-full h-2">
+                <div className={`h-2 rounded-full transition-all ${actionStyle.badge}`}
+                  style={{ width: `${data.conviction}%` }} />
+              </div>
+            </div>
+
+            {/* Target + Stop */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-[#1a1a1a] rounded-lg p-3 border border-[#2a2a2a] text-center">
+                <div className="text-xs text-gray-400 mb-1">Target</div>
+                <div className="text-emerald-400 font-semibold text-sm">${Number(data.target).toFixed(2)}</div>
+              </div>
+              <div className="bg-[#1a1a1a] rounded-lg p-3 border border-[#2a2a2a] text-center">
+                <div className="text-xs text-gray-400 mb-1">Stop</div>
+                <div className="text-red-400 font-semibold text-sm">${Number(data.stop).toFixed(2)}</div>
+              </div>
+            </div>
+
+            {/* Reasons to hold */}
+            {data.reasonsToHold?.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-white text-xs font-semibold uppercase tracking-wider">Reasons to Hold</span>
+                </div>
+                {data.reasonsToHold.map((r, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <Check className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />
+                    <span className="text-gray-300 text-sm">{r}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Reasons to sell */}
+            {data.reasonsToSell?.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <AlertTriangle className="w-3.5 h-3.5 text-yellow-400" />
+                  <span className="text-white text-xs font-semibold uppercase tracking-wider">Reasons to Exit</span>
+                </div>
+                {data.reasonsToSell.map((r, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <AlertTriangle className="w-3.5 h-3.5 text-yellow-400 mt-0.5 shrink-0" />
+                    <span className="text-gray-300 text-sm">{r}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Timeframe + Catalyst */}
+            <div className="grid grid-cols-2 gap-3">
+              {data.timeframe && (
+                <div className="bg-[#1a1a1a] rounded-lg p-3 border border-[#2a2a2a]">
+                  <div className="text-xs text-gray-400 mb-1">Timeframe</div>
+                  <div className="text-white text-sm font-medium">{data.timeframe}</div>
+                </div>
+              )}
+              {data.catalyst && (
+                <div className="bg-[#1a1a1a] rounded-lg p-3 border border-[#2a2a2a]">
+                  <div className="text-xs text-gray-400 mb-1">Catalyst</div>
+                  <div className="text-white text-sm font-medium">{data.catalyst}</div>
+                </div>
+              )}
+            </div>
+
+            {/* Full Analysis */}
+            {data.fullAnalysis && (
+              <div className="bg-[#1a1a1a] rounded-lg p-4 border border-[#2a2a2a]">
+                <div className="text-gray-500 text-xs uppercase tracking-wider mb-2">Full Analysis</div>
+                <p className="text-gray-300 text-sm leading-relaxed">{data.fullAnalysis}</p>
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <div className="space-y-2 pb-4">
+              {(data.action === 'SELL' || data.action === 'TRIM') && (
+                <button
+                  onClick={() => { onClose(); onSell(symbol, Math.floor(data.qty), data.currentPrice) }}
+                  className="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-lg transition"
+                >
+                  {data.action === 'TRIM' ? `Trim position — open sell` : `Sell ${symbol}`}
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="w-full py-3 rounded-lg border border-[#2a2a2a] text-gray-400 text-sm font-semibold hover:bg-[#1a1a1a] transition"
+              >
+                Keep holding
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // Portfolio Screen
 const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
   const [positions, setPositions]         = useState([])
@@ -250,7 +421,10 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
   const [totalPnl, setTotalPnl]           = useState(0)
   const [loading, setLoading]             = useState(true)
   const [error, setError]                 = useState(null)
-  const [sellTarget, setSellTarget]       = useState(null)  // { symbol, sharesOwned, currentPrice }
+  const [sellTarget, setSellTarget]       = useState(null)     // { symbol, sharesOwned, currentPrice }
+  const [exitBadges, setExitBadges]       = useState({})       // { SYMBOL: { action, conviction } }
+  const [exitTarget, setExitTarget]       = useState(null)     // { symbol, currentPrice, userId }
+  const [badgesLoading, setBadgesLoading] = useState(false)
 
   useEffect(() => {
     loadPortfolio()
@@ -291,6 +465,20 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
       setPositionsValue(posVal ?? 0)
       setTotalEquity(equityVal ?? 0)
       setTotalPnl(pnlVal ?? 0)
+
+      // Fetch batch exit badges (non-blocking)
+      if ((raw || []).length > 0) {
+        setBadgesLoading(true)
+        fetch('/api/portfolio-exit-signals', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ userId: session.user.id }),
+        })
+          .then(r => r.ok ? r.json() : {})
+          .then(setExitBadges)
+          .catch(() => {})
+          .finally(() => setBadgesLoading(false))
+      }
     } catch (err) {
       console.error('Error loading portfolio:', err)
       setError(err.message)
@@ -397,10 +585,29 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
               return (
                 <div key={position.symbol} className="bg-[#1a1a1a] rounded-xl p-4 border border-[#2a2a2a] hover:bg-[#222] transition">
                   <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <div className="font-bold text-white text-base">{position.symbol}</div>
-                      <div className="text-gray-500 text-xs mt-0.5">
-                        {position.qty % 1 === 0 ? position.qty : position.qty.toFixed(4)} shares @ ${fmt(position.avgEntryPrice)}
+                    <div className="flex items-center gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <div className="font-bold text-white text-base">{position.symbol}</div>
+                          {/* Exit badge */}
+                          {exitBadges[position.symbol] && (() => {
+                            const b = exitBadges[position.symbol]
+                            const dot = b.action === 'SELL' ? 'bg-red-500' : b.action === 'TRIM' ? 'bg-yellow-500' : 'bg-emerald-500'
+                            const lbl = b.action === 'SELL' ? 'text-red-400' : b.action === 'TRIM' ? 'text-yellow-400' : 'text-emerald-400'
+                            return (
+                              <span className={`flex items-center gap-1 text-xs font-semibold ${lbl}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
+                                {b.action}
+                              </span>
+                            )
+                          })()}
+                          {badgesLoading && !exitBadges[position.symbol] && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-gray-600 animate-pulse" />
+                          )}
+                        </div>
+                        <div className="text-gray-500 text-xs mt-0.5">
+                          {position.qty % 1 === 0 ? position.qty : position.qty.toFixed(4)} shares @ ${fmt(position.avgEntryPrice)}
+                        </div>
                       </div>
                     </div>
                     <div className="text-right">
@@ -413,7 +620,7 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
                       <div className="text-gray-500 text-xs">Market Value</div>
                       <div className="text-white text-sm font-medium">${fmt(marketValue)}</div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
                       <div className="text-right">
                         <div className="text-gray-500 text-xs">Unrealized P&L</div>
                         <div className={`text-sm font-bold ${isGain ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -423,6 +630,15 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
                           </span>
                         </div>
                       </div>
+                      <button
+                        onClick={async () => {
+                          const { data: { session } } = await supabase.auth.getSession()
+                          setExitTarget({ symbol: position.symbol, currentPrice, userId: session?.user?.id })
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 text-xs font-semibold transition whitespace-nowrap"
+                      >
+                        AI Analysis
+                      </button>
                       <button
                         onClick={() => setSellTarget({ symbol: position.symbol, sharesOwned: Math.floor(position.qty), currentPrice })}
                         className="px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-semibold transition"
@@ -446,6 +662,20 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
           currentPrice={sellTarget.currentPrice}
           onClose={() => setSellTarget(null)}
           onSold={() => { setSellTarget(null); loadPortfolio() }}
+        />
+      )}
+
+      {/* Exit Signal Modal */}
+      {exitTarget && (
+        <ExitSignalModal
+          symbol={exitTarget.symbol}
+          userId={exitTarget.userId}
+          currentPrice={exitTarget.currentPrice}
+          onClose={() => setExitTarget(null)}
+          onSell={(sym, shares, price) => {
+            setExitTarget(null)
+            setSellTarget({ symbol: sym, sharesOwned: shares, currentPrice: price })
+          }}
         />
       )}
     </div>
