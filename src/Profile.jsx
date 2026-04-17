@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
 import { Heart, Settings, Users, Check, ArrowLeft } from 'lucide-react'
+import { TopTraderBadge } from './TopTradersContext'
 
 const Profile = ({ userId, currentUser, onBack, onResetOnboarding }) => {
   const [profile, setProfile] = useState(null)
@@ -334,7 +335,10 @@ const Profile = ({ userId, currentUser, onBack, onResetOnboarding }) => {
                 </div>
               ) : (
                 <>
-                  <div className="font-bold text-white text-lg">{profile.username || 'Unknown'}</div>
+                  <div className="font-bold text-white text-lg flex items-center gap-2">
+                    {profile.username || 'Unknown'}
+                    <TopTraderBadge userId={userId} />
+                  </div>
                   <div className="text-gray-400 text-sm">{profile.bio || 'No bio yet'}</div>
                 </>
               )}

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
 import { Heart, MessageCircle, PlusCircle, Check, X, Send } from 'lucide-react'
+import { TopTraderBadge } from './TopTradersContext'
 
 // Toast notification component
 const Toast = ({ message, onClose }) => {
@@ -388,9 +389,10 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
                 <div>
                   <button
                     onClick={() => onUserClick(post.user_id)}
-                    className="font-semibold text-white text-sm hover:text-emerald-400 transition"
+                    className="font-semibold text-white text-sm hover:text-emerald-400 transition flex items-center gap-1.5"
                   >
                     {post.username}
+                    <TopTraderBadge userId={post.user_id} />
                   </button>
                   <div className="text-gray-500 text-xs">{formatTimeAgo(post.created_at)}</div>
                 </div>
@@ -454,8 +456,11 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
                     <div className="space-y-2">
                       {postReplies.map((reply) => (
                         <div key={reply.id} className="bg-[#0f0f0f] rounded-xl p-3 border border-[#2a2a2a]">
-                          <div className="flex items-baseline gap-2 mb-1">
-                            <span className="text-white text-xs font-semibold">{reply.username}</span>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-white text-xs font-semibold flex items-center gap-1">
+                              {reply.username}
+                              <TopTraderBadge userId={reply.user_id} />
+                            </span>
                             <span className="text-gray-600 text-xs">{formatTimeAgo(reply.created_at)}</span>
                           </div>
                           <p className="text-gray-300 text-sm">{reply.content}</p>

@@ -10,7 +10,8 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { symbol } = req.query
+  const { symbol, userId: queryUserId } = req.query
+  const limit = Math.min(parseInt(req.query.limit, 10) || 20, 200)
 
   try {
     const supabase = createClient(
@@ -186,10 +187,29 @@ export default async function handler(req, res) {
     const topTraders  = userStats.slice(0, topCount)
     const topTraderIds = topTraders.map(u => u.userId)
 
-    // Leaderboard — top 20, strip internal posMap
-    const leaderboard = userStats.slice(0, 20).map(({ posMap: _p, ...rest }) => rest)
+    // Leaderboard — top N, strip internal posMap
+    const leaderboard = userStats.slice(0, limit).map(({ posMap: _p, ...rest }) => rest)
 
-    const response = { topTraderIds, leaderboard }
+    const response = { topTraderIds, leaderboard, totalUsers: userStats.length }
+
+    // Per-user rank info
+    if (queryUserId) {
+      const rankIdx = userStats.findIndex(u => u.userId === queryUserId)
+      if (rankIdx !== -1) {
+        const u = userStats[rankIdx]
+        response.userRank = {
+          rank:          rankIdx + 1,
+          percentReturn: u.percentReturn,
+          totalPnl:      u.totalPnl,
+          winRate:       u.winRate,
+          tradeCount:    u.tradeCount,
+          totalUsers:    userStats.length,
+        }
+      } else {
+        // User exists in the system but has no trades yet
+        response.userRank = null
+      }
+    }
 
     // Symbol-specific top trader conviction
     if (symbol) {

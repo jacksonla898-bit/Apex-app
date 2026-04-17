@@ -5,6 +5,8 @@ import Landing from './Landing'
 import Profile from './Profile'
 import FeedScreen from './Feed'
 import FundsScreen from './Funds'
+import LeaderboardScreen from './Leaderboard'
+import { TopTradersContext, TopTraderBadge } from './TopTradersContext'
 import {
   LayoutDashboard,
   Rss,
@@ -25,6 +27,7 @@ import {
   Activity,
   Trophy,
   Shield,
+  Star,
 } from 'lucide-react'
 
 // Toast notification component
@@ -834,7 +837,10 @@ const CommunityModal = ({ ticker, onClose }) => {
                       <div className="flex items-center gap-3">
                         <span className="text-gray-500 text-xs w-4">{i + 1}</span>
                         <div>
-                          <div className="text-white text-sm font-semibold">{displayName(h.userId)}</div>
+                          <div className="flex items-center gap-1.5 text-white text-sm font-semibold">
+                            {displayName(h.userId)}
+                            <TopTraderBadge userId={h.userId} />
+                          </div>
                           <div className="text-gray-500 text-xs">{h.shares.toFixed(4)} shares @ ${h.avgEntryPrice.toFixed(2)}</div>
                         </div>
                       </div>
@@ -859,7 +865,10 @@ const CommunityModal = ({ ticker, onClose }) => {
                   {data.whales.map((w) => (
                     <div key={w.userId} className="flex items-center justify-between bg-[#1a1a1a] rounded-lg px-4 py-3 border border-[#2a2a2a]">
                       <div>
-                        <div className="text-white text-sm font-semibold">{displayName(w.userId)}</div>
+                        <div className="flex items-center gap-1.5 text-white text-sm font-semibold">
+                          {displayName(w.userId)}
+                          <TopTraderBadge userId={w.userId} />
+                        </div>
                         <div className="text-emerald-400 text-xs">{w.sentiment}</div>
                       </div>
                       <div className="text-blue-400 text-sm font-semibold">${w.positionValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
@@ -885,7 +894,10 @@ const CommunityModal = ({ ticker, onClose }) => {
                         <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${t.side === 'buy' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
                           {t.side === 'buy' ? 'BUY' : 'SELL'}
                         </span>
-                        <span className="text-gray-300 text-xs font-semibold">{displayName(t.userId)}</span>
+                        <span className="flex items-center gap-1 text-gray-300 text-xs font-semibold">
+                          {displayName(t.userId)}
+                          <TopTraderBadge userId={t.userId} />
+                        </span>
                         <span className="text-gray-500 text-xs">{t.quantity} shares @ ${t.price.toFixed(2)}</span>
                       </div>
                       <span className="text-gray-600 text-xs shrink-0 ml-2">{timeAgo(t.createdAt)}</span>
@@ -1937,6 +1949,7 @@ export default function App() {
   const [onboardingCompleted, setOnboardingCompleted] = useState(null) // null = not checked yet
   const [initialAiTicker, setInitialAiTicker] = useState(null)
   const [hasUsername, setHasUsername] = useState(null) // null = not checked yet
+  const [topTraderIdsSet, setTopTraderIdsSet] = useState(new Set())
 
   useEffect(() => {
     const checkUser = async () => {
@@ -1978,6 +1991,22 @@ export default function App() {
       .catch(() => setOnboardingCompleted(true)) // if check fails, don't block the app
   }, [user?.id])
 
+  // Populate top trader IDs for badge system — refresh every 5 minutes
+  useEffect(() => {
+    if (!user) return
+    const fetchIds = () => {
+      fetch('/api/top-traders')
+        .then(r => r.ok ? r.json() : {})
+        .then(data => {
+          if (data.topTraderIds) setTopTraderIdsSet(new Set(data.topTraderIds))
+        })
+        .catch(() => {})
+    }
+    fetchIds()
+    const interval = setInterval(fetchIds, 5 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [user?.id])
+
   // Check if user has a username (for existing users who skipped onboarding)
   useEffect(() => {
     if (!user) return
@@ -2005,6 +2034,7 @@ export default function App() {
 
   const handleOnboardingComplete = (ticker) => {
     setOnboardingCompleted(true)
+    setHasUsername(true) // username was claimed during onboarding step 3
     if (ticker) {
       setInitialAiTicker(ticker)
       setActiveTab('ai')
@@ -2035,6 +2065,8 @@ export default function App() {
           onTradeSuccess={() => setPortfolioRefreshTrigger(prev => prev + 1)}
           initialTicker={initialAiTicker}
         />
+      case 'leaderboard':
+        return <LeaderboardScreen user={user} />
       case 'funds':
         return <FundsScreen user={user} />
       case 'profile':
@@ -2089,6 +2121,7 @@ export default function App() {
   }
   
   return (
+    <TopTradersContext.Provider value={topTraderIdsSet}>
     <div className="min-h-screen bg-[#0f0f0f]">
       {/* Main Content - Centered on Desktop */}
       <div className="mx-auto max-w-2xl h-screen flex flex-col border-x border-[#2a2a2a]">
@@ -2106,13 +2139,14 @@ export default function App() {
         </div>
         
         {/* Bottom Navigation */}
-        <div className="border-t border-[#2a2a2a] bg-[#0f0f0f] px-4 py-4 grid grid-cols-5 gap-2 sticky bottom-0">
+        <div className="border-t border-[#2a2a2a] bg-[#0f0f0f] px-2 py-3 grid grid-cols-6 gap-1 sticky bottom-0">
           {[
-            { id: 'portfolio', label: 'Portfolio', Icon: LayoutDashboard },
-            { id: 'feed', label: 'Feed', Icon: Rss },
-            { id: 'ai', label: 'AI Trader', Icon: Bot },
-            { id: 'funds', label: 'Funds', Icon: Briefcase },
-            { id: 'profile', label: 'Profile', Icon: User }
+            { id: 'portfolio',    label: 'Portfolio', Icon: LayoutDashboard },
+            { id: 'feed',         label: 'Feed',      Icon: Rss },
+            { id: 'ai',           label: 'AI',        Icon: Bot },
+            { id: 'leaderboard',  label: 'Leaders',   Icon: Trophy },
+            { id: 'funds',        label: 'Funds',     Icon: Briefcase },
+            { id: 'profile',      label: 'Profile',   Icon: User },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -2135,6 +2169,7 @@ export default function App() {
         </div>
       </div>
     </div>
+    </TopTradersContext.Provider>
   )
 }
 

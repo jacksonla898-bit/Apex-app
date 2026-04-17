@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
 import { Plus, Check, X, BarChart3 } from 'lucide-react'
+import { TopTraderBadge } from './TopTradersContext'
 
 // ── Toast ──────────────────────────────────────────────────────────────────────
 const Toast = ({ message, onClose }) => {
@@ -378,7 +379,10 @@ const FundsScreen = ({ user }) => {
               <div className="flex justify-between items-start">
                 <div className="flex-1 pr-3">
                   <div className="font-bold text-white text-base">{fund.name}</div>
-                  <div className="text-gray-400 text-sm mt-0.5">by {fund.manager_username}</div>
+                  <div className="text-gray-400 text-sm mt-0.5 flex items-center gap-1.5">
+                    by {fund.manager_username}
+                    <TopTraderBadge userId={fund.manager_id} />
+                  </div>
                 </div>
                 <div className="text-right shrink-0">
                   <div className="text-emerald-400 text-2xl font-bold leading-none">
