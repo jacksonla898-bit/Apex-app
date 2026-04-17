@@ -57,21 +57,23 @@ export default async function handler(req, res) {
         costBasis:     v.totalCost,
       }))
 
-    // Get or seed cash balance
+    // Get or seed cash balance + onboarding flag
     let cash = 10000
+    let onboardingCompleted = false
     const { data: balanceRow } = await supabase
       .from('user_balances')
-      .select('cash')
+      .select('cash, onboarding_completed')
       .eq('user_id', userId)
       .single()
 
     if (balanceRow) {
       cash = parseFloat(balanceRow.cash)
+      onboardingCompleted = balanceRow.onboarding_completed ?? false
     } else {
       // First time — insert default $10,000
       await supabase
         .from('user_balances')
-        .insert({ user_id: userId, cash: 10000 })
+        .insert({ user_id: userId, cash: 10000, onboarding_completed: false })
     }
 
     if (positions.length === 0) {
@@ -81,6 +83,7 @@ export default async function handler(req, res) {
         positionsValue: 0,
         totalEquity:    cash,
         totalPnl:       0,
+        onboardingCompleted,
       })
     }
 
@@ -131,7 +134,7 @@ export default async function handler(req, res) {
     const totalPnl       = enriched.reduce((sum, p) => sum + p.unrealizedPnl, 0)
     const totalEquity    = cash + positionsValue
 
-    return res.status(200).json({ positions: enriched, cash, positionsValue, totalEquity, totalPnl })
+    return res.status(200).json({ positions: enriched, cash, positionsValue, totalEquity, totalPnl, onboardingCompleted })
   } catch (err) {
     console.error('user-portfolio error:', err)
     return res.status(500).json({ error: err.message })

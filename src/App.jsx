@@ -23,6 +23,8 @@ import {
   ArrowUp,
   ArrowDown,
   Activity,
+  Trophy,
+  Shield,
 } from 'lucide-react'
 
 // Toast notification component
@@ -1036,8 +1038,8 @@ const LowConvictionWarning = ({ conviction, onConfirm, onCancel }) => (
 )
 
 // AI Trader Screen
-const AITraderScreen = ({ onTradeSuccess }) => {
-  const [tickerInput, setTickerInput] = useState('AAPL')
+const AITraderScreen = ({ onTradeSuccess, initialTicker = null }) => {
+  const [tickerInput, setTickerInput] = useState(initialTicker || 'AAPL')
   const [timeframe, setTimeframe] = useState('1h')
   const [risk, setRisk] = useState(50)
   const [signal, setSignal] = useState(null)
@@ -1602,6 +1604,188 @@ const AITraderScreen = ({ onTradeSuccess }) => {
   )
 }
 
+// Onboarding Flow
+const OnboardingFlow = ({ userId, onComplete }) => {
+  const [step, setStep] = useState(1)
+  const [agreed, setAgreed] = useState(false)
+  const [completing, setCompleting] = useState(false)
+
+  const STOCKS = [
+    { symbol: 'AAPL',  name: 'Apple Inc.' },
+    { symbol: 'TSLA',  name: 'Tesla, Inc.' },
+    { symbol: 'NVDA',  name: 'NVIDIA Corporation' },
+  ]
+
+  const finish = async (ticker = null) => {
+    setCompleting(true)
+    try {
+      await fetch('/api/complete-onboarding', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ userId }),
+      })
+    } catch (e) {
+      console.error('complete-onboarding error:', e)
+    } finally {
+      onComplete(ticker)
+    }
+  }
+
+  const stepWrap = (content) => (
+    <div className="min-h-screen bg-[#0f0f0f] flex flex-col">
+      <div className="mx-auto max-w-lg w-full flex-1 flex flex-col px-6 pt-16 pb-10">
+        {/* Progress dots */}
+        <div className="flex gap-2 mb-12 justify-center">
+          {[1, 2, 3, 4].map(s => (
+            <div
+              key={s}
+              className={`h-1.5 rounded-full transition-all ${s === step ? 'w-8 bg-emerald-500' : s < step ? 'w-4 bg-emerald-500/50' : 'w-4 bg-[#2a2a2a]'}`}
+            />
+          ))}
+        </div>
+        {content}
+      </div>
+    </div>
+  )
+
+  if (step === 1) return stepWrap(
+    <div className="flex flex-col flex-1">
+      <div className="flex-1 flex flex-col justify-center space-y-8">
+        <div className="space-y-4">
+          <div className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-emerald-300">
+            Conviction
+          </div>
+          <p className="text-2xl font-bold text-white leading-snug">
+            Trade with conviction,<br />backed by AI.
+          </p>
+          <p className="text-gray-400 text-base leading-relaxed">
+            Analyze any stock in seconds, see what the crowd is holding, and make smarter paper trades with real market data.
+          </p>
+        </div>
+      </div>
+      <button
+        onClick={() => setStep(2)}
+        className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 rounded-xl transition text-base"
+      >
+        Get started
+      </button>
+    </div>
+  )
+
+  if (step === 2) return stepWrap(
+    <div className="flex flex-col flex-1">
+      <div className="flex-1 flex flex-col justify-center space-y-6">
+        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <Shield className="w-7 h-7 text-yellow-400 shrink-0" />
+            <h2 className="text-white font-bold text-xl">This is paper trading</h2>
+          </div>
+          <p className="text-gray-300 text-sm leading-relaxed">
+            You're starting with <span className="text-white font-semibold">$10,000 in virtual cash</span>. Trades use live market data but do not execute in real markets. This is for educational and simulation purposes only. No real money is at risk.
+          </p>
+        </div>
+        <label className="flex items-start gap-3 cursor-pointer group">
+          <div
+            onClick={() => setAgreed(v => !v)}
+            className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition ${agreed ? 'bg-emerald-500 border-emerald-500' : 'border-[#3a3a3a] group-hover:border-emerald-500/50'}`}
+          >
+            {agreed && <Check className="w-3 h-3 text-white" />}
+          </div>
+          <span className="text-gray-300 text-sm leading-relaxed" onClick={() => setAgreed(v => !v)}>
+            I understand this is paper trading and no real money is involved.
+          </span>
+        </label>
+      </div>
+      <button
+        onClick={() => setStep(3)}
+        disabled={!agreed}
+        className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-30 disabled:cursor-not-allowed text-white font-bold py-4 rounded-xl transition text-base"
+      >
+        Continue
+      </button>
+    </div>
+  )
+
+  if (step === 3) return stepWrap(
+    <div className="flex flex-col flex-1">
+      <div className="flex-1 flex flex-col justify-center space-y-6">
+        <div>
+          <h2 className="text-white font-bold text-2xl mb-2">How it works</h2>
+          <p className="text-gray-400 text-sm">Three tools in one app.</p>
+        </div>
+        <div className="space-y-3">
+          {[
+            {
+              icon: <Bot className="w-6 h-6 text-emerald-400" />,
+              title: 'AI Signal',
+              body: 'AI analyzes stocks and tells you when to buy, with conviction scores and price targets.',
+            },
+            {
+              icon: <Users className="w-6 h-6 text-blue-400" />,
+              title: 'Community',
+              body: 'See what other traders are holding and how they\'re positioned across the market.',
+            },
+            {
+              icon: <Trophy className="w-6 h-6 text-yellow-400" />,
+              title: 'Leaderboard',
+              body: 'Compete with real performance metrics and see who\'s trading with the most conviction.',
+            },
+          ].map(card => (
+            <div key={card.title} className="bg-[#1a1a1a] rounded-xl p-4 border border-[#2a2a2a] flex gap-4">
+              <div className="shrink-0 mt-0.5">{card.icon}</div>
+              <div>
+                <div className="text-white font-semibold text-sm mb-1">{card.title}</div>
+                <div className="text-gray-400 text-sm leading-relaxed">{card.body}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <button
+        onClick={() => setStep(4)}
+        className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 rounded-xl transition text-base"
+      >
+        Continue
+      </button>
+    </div>
+  )
+
+  // Step 4 — first action
+  return stepWrap(
+    <div className="flex flex-col flex-1">
+      <div className="flex-1 flex flex-col justify-center space-y-6">
+        <div>
+          <h2 className="text-white font-bold text-2xl mb-2">Ready to start?</h2>
+          <p className="text-gray-400 text-sm">Pick a stock and run your first AI analysis.</p>
+        </div>
+        <div className="space-y-3">
+          {STOCKS.map(({ symbol, name }) => (
+            <button
+              key={symbol}
+              onClick={() => finish(symbol)}
+              disabled={completing}
+              className="w-full bg-[#1a1a1a] hover:bg-[#222] border border-[#2a2a2a] hover:border-emerald-500/40 rounded-xl p-4 text-left transition disabled:opacity-50 flex items-center justify-between group"
+            >
+              <div>
+                <div className="text-white font-bold text-base">{symbol}</div>
+                <div className="text-gray-500 text-sm">{name}</div>
+              </div>
+              <ChevronDown className="w-4 h-4 text-gray-600 group-hover:text-emerald-400 transition -rotate-90" />
+            </button>
+          ))}
+        </div>
+      </div>
+      <button
+        onClick={() => finish(null)}
+        disabled={completing}
+        className="w-full py-3 text-gray-500 text-sm hover:text-gray-300 transition disabled:opacity-50"
+      >
+        Skip for now
+      </button>
+    </div>
+  )
+}
+
 // Main App Component
 export default function App() {
   const [activeTab, setActiveTab] = useState('portfolio')
@@ -1609,9 +1793,10 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [viewingProfileId, setViewingProfileId] = useState(null)
   const [portfolioRefreshTrigger, setPortfolioRefreshTrigger] = useState(0)
+  const [onboardingCompleted, setOnboardingCompleted] = useState(null) // null = not checked yet
+  const [initialAiTicker, setInitialAiTicker] = useState(null)
 
   useEffect(() => {
-    // Check for existing session
     const checkUser = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession()
@@ -1625,20 +1810,33 @@ export default function App() {
 
     checkUser()
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         setUser(session?.user ?? null)
         setLoading(false)
+        // Reset onboarding check on sign-out
+        if (!session) setOnboardingCompleted(null)
       }
     )
 
     return () => subscription.unsubscribe()
   }, [])
 
-  const handleAuthSuccess = () => {
-    // User will be set by the auth state change listener
-  }
+  // Check onboarding status once after user is confirmed
+  useEffect(() => {
+    if (!user) return
+    setOnboardingCompleted(null) // show spinner while checking
+    fetch('/api/user-portfolio', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ userId: user.id }),
+    })
+      .then(r => r.ok ? r.json() : {})
+      .then(data => setOnboardingCompleted(data.onboardingCompleted ?? false))
+      .catch(() => setOnboardingCompleted(true)) // if check fails, don't block the app
+  }, [user?.id])
+
+  const handleAuthSuccess = () => {}
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -1647,6 +1845,14 @@ export default function App() {
   const handleUserClick = (userId) => {
     setViewingProfileId(userId)
     setActiveTab('profile')
+  }
+
+  const handleOnboardingComplete = (ticker) => {
+    setOnboardingCompleted(true)
+    if (ticker) {
+      setInitialAiTicker(ticker)
+      setActiveTab('ai')
+    }
   }
 
   const renderScreen = () => {
@@ -1669,7 +1875,10 @@ export default function App() {
       case 'feed':
         return <FeedScreen onUserClick={handleUserClick} setPortfolioRefreshTrigger={setPortfolioRefreshTrigger} />
       case 'ai':
-        return <AITraderScreen onTradeSuccess={() => setPortfolioRefreshTrigger(prev => prev + 1)} />
+        return <AITraderScreen
+          onTradeSuccess={() => setPortfolioRefreshTrigger(prev => prev + 1)}
+          initialTicker={initialAiTicker}
+        />
       case 'funds':
         return <FundsScreen user={user} />
       case 'profile':
@@ -1678,6 +1887,14 @@ export default function App() {
             userId={user.id}
             currentUser={user}
             onBack={() => setActiveTab('portfolio')}
+            onResetOnboarding={async () => {
+              await fetch('/api/complete-onboarding', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ userId: user.id, reset: true }),
+              })
+              setOnboardingCompleted(false)
+            }}
           />
         ) : null
       default:
@@ -1685,8 +1902,8 @@ export default function App() {
     }
   }
 
-  // Show loading spinner while checking authentication
-  if (loading) {
+  // Show loading spinner while checking authentication or onboarding status
+  if (loading || (user && onboardingCompleted === null)) {
     return (
       <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center">
         <div className="w-12 h-12 border-4 border-[#2a2a2a] border-t-emerald-500 rounded-full animate-spin"></div>
@@ -1697,6 +1914,11 @@ export default function App() {
   // Show login screen if not authenticated
   if (!user) {
     return <Landing onAuthSuccess={handleAuthSuccess} />
+  }
+
+  // Show onboarding if not completed
+  if (onboardingCompleted === false) {
+    return <OnboardingFlow userId={user.id} onComplete={handleOnboardingComplete} />
   }
   
   return (

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
 import { Heart, Settings, Users, Check, ArrowLeft } from 'lucide-react'
 
-const Profile = ({ userId, currentUser, onBack }) => {
+const Profile = ({ userId, currentUser, onBack, onResetOnboarding }) => {
   const [profile, setProfile] = useState(null)
   const [posts, setPosts] = useState([])
   const [followers, setFollowers] = useState(0)
@@ -381,6 +381,18 @@ const Profile = ({ userId, currentUser, onBack }) => {
             </button>
           )}
         </div>
+
+        {/* Reset onboarding (testing) */}
+        {isOwnProfile && onResetOnboarding && (
+          <div className="pt-2">
+            <button
+              onClick={onResetOnboarding}
+              className="text-gray-600 text-xs hover:text-gray-400 transition underline underline-offset-2"
+            >
+              Reset onboarding
+            </button>
+          </div>
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-2 gap-4 pt-4 border-t border-[#2a2a2a]">
