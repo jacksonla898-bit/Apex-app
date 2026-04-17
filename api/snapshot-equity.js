@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { computeEquity, insertSnapshot } from './_lib/computeEquity.js'
+import { computeEquity, insertSnapshot } from '../lib/computeEquity.js'
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
