@@ -370,6 +370,33 @@ const CommunityModal = ({ ticker, onClose }) => {
               </div>
             </div>
 
+            {/* Sentiment breakdown */}
+            {data.sentimentBreakdown && (
+              <div className="flex flex-wrap gap-3 text-xs">
+                {data.sentimentBreakdown.high > 0 && (
+                  <span className="flex items-center gap-1 text-yellow-400">
+                    <Zap className="w-3 h-3" />{data.sentimentBreakdown.high} high conviction
+                  </span>
+                )}
+                {data.sentimentBreakdown.regular > 0 && (
+                  <span className="flex items-center gap-1 text-emerald-400">
+                    <Check className="w-3 h-3" />{data.sentimentBreakdown.regular} regular
+                  </span>
+                )}
+                {data.sentimentBreakdown.test > 0 && (
+                  <span className="flex items-center gap-1 text-blue-400">
+                    <Activity className="w-3 h-3" />{data.sentimentBreakdown.test} test
+                  </span>
+                )}
+                {data.sentimentBreakdown.unknown > 0 && (
+                  <span className="text-gray-500">{data.sentimentBreakdown.unknown} untagged</span>
+                )}
+                {data.holderCount === 0 && (
+                  <span className="text-gray-500">No positions yet</span>
+                )}
+              </div>
+            )}
+
             {/* 24h change */}
             <div className="flex items-center gap-2 bg-[#1a1a1a] rounded-lg px-4 py-3 border border-[#2a2a2a]">
               {data.bullishChange24h > 0
@@ -469,6 +496,63 @@ const CommunityModal = ({ ticker, onClose }) => {
   )
 }
 
+// Sentiment Picker Modal
+const SentimentPickerModal = ({ onPick, onCancel }) => {
+  const options = [
+    {
+      value:    'high',
+      icon:     <Zap className="w-5 h-5 text-yellow-400" />,
+      label:    'High conviction',
+      subtitle: 'Strong signal, sizing up',
+      border:   'border-yellow-500/40',
+      bg:       'hover:bg-yellow-500/10',
+    },
+    {
+      value:    'regular',
+      icon:     <Check className="w-5 h-5 text-emerald-400" />,
+      label:    'Regular buy',
+      subtitle: 'Standard position',
+      border:   'border-emerald-500/40',
+      bg:       'hover:bg-emerald-500/10',
+    },
+    {
+      value:    'test',
+      icon:     <Activity className="w-5 h-5 text-blue-400" />,
+      label:    'Small test position',
+      subtitle: 'Testing the thesis',
+      border:   'border-blue-500/40',
+      bg:       'hover:bg-blue-500/10',
+    },
+  ]
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70">
+      <div className="w-full max-w-lg bg-[#1a1a1a] rounded-t-2xl border-t border-[#2a2a2a] p-5 space-y-3">
+        <div className="text-white font-bold text-base mb-1">What's your conviction level?</div>
+        {options.map(opt => (
+          <button
+            key={opt.value}
+            onClick={() => onPick(opt.value)}
+            className={`w-full flex items-center gap-4 px-4 py-4 rounded-xl border ${opt.border} bg-[#0f0f0f] ${opt.bg} transition text-left`}
+          >
+            {opt.icon}
+            <div>
+              <div className="text-white font-semibold text-sm">{opt.label}</div>
+              <div className="text-gray-500 text-xs">{opt.subtitle}</div>
+            </div>
+          </button>
+        ))}
+        <button
+          onClick={onCancel}
+          className="w-full py-3 text-gray-400 text-sm hover:text-white transition"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // AI Trader Screen
 const AITraderScreen = ({ onTradeSuccess }) => {
   const [tickerInput, setTickerInput] = useState('AAPL')
@@ -483,6 +567,7 @@ const AITraderScreen = ({ onTradeSuccess }) => {
   const [communityData, setCommunityData] = useState(null)
   const [topTradersData, setTopTradersData] = useState(null)
   const [showCommunityModal, setShowCommunityModal] = useState(false)
+  const [showSentimentPicker, setShowSentimentPicker] = useState(false)
 
   const popularTickers = ['NVDA', 'AAPL', 'TSLA', 'MSFT', 'META', 'AMZN', 'SPY', 'AMD', 'GOOGL', 'BTC-USD', 'ETH-USD', 'NFLX']
 
@@ -526,9 +611,10 @@ const AITraderScreen = ({ onTradeSuccess }) => {
     }
   }
 
-  const handlePlaceTrade = async () => {
+  const handlePlaceTrade = async (sentiment) => {
     if (!signal || signal.signal !== 'BUY' || signal.conviction < 60) return
 
+    setShowSentimentPicker(false)
     setTradeLoading(true)
     setToast(null)
 
@@ -558,7 +644,7 @@ const AITraderScreen = ({ onTradeSuccess }) => {
       console.log('Trade placed:', data)
 
       if (entryPrice > 0) {
-        await recordTrade({ symbol: tickerInput, side: 'buy', quantity: 1, price: entryPrice })
+        await recordTrade({ symbol: tickerInput, side: 'buy', quantity: 1, price: entryPrice, sentiment })
       }
 
       if (onTradeSuccess) onTradeSuccess()
@@ -927,7 +1013,7 @@ const AITraderScreen = ({ onTradeSuccess }) => {
             {/* Buy Button */}
             {signal.signal === 'BUY' && !lowConviction ? (
               <button
-                onClick={handlePlaceTrade}
+                onClick={() => setShowSentimentPicker(true)}
                 disabled={tradeLoading}
                 className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold py-3 rounded-lg transition"
               >
@@ -945,6 +1031,14 @@ const AITraderScreen = ({ onTradeSuccess }) => {
               }`}>
                 {signal.signal === 'SELL' ? 'Sell Signal — no paper short available' : 'Hold — no action recommended'}
               </div>
+            )}
+
+            {/* Sentiment picker */}
+            {showSentimentPicker && (
+              <SentimentPickerModal
+                onPick={handlePlaceTrade}
+                onCancel={() => setShowSentimentPicker(false)}
+              />
             )}
 
           </div>

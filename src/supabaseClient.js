@@ -10,17 +10,20 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 // Record a trade for the currently authenticated user.
 // Called after a successful Alpaca execution so portfolio state stays per-user.
 // price should be a plain number (not a formatted string).
-export async function recordTrade({ symbol, side, quantity, price }) {
+export async function recordTrade({ symbol, side, quantity, price, sentiment = null }) {
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) throw new Error('Not authenticated')
 
-  const { error } = await supabase.from('trades').insert({
+  const row = {
     user_id: user.id,
     symbol: symbol.toUpperCase(),
     side,
     quantity,
     price,
-  })
+  }
+  if (sentiment) row.sentiment = sentiment
+
+  const { error } = await supabase.from('trades').insert(row)
 
   if (error) {
     console.error('recordTrade error:', error.message, error.code, error.hint, error.details)
