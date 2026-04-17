@@ -14,6 +14,10 @@ import {
   RefreshCw,
   Check,
   Zap,
+  TrendingUp,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 
 // Toast notification component
@@ -301,6 +305,7 @@ const AITraderScreen = ({ onTradeSuccess }) => {
   const [error, setError] = useState(null)
   const [tradeLoading, setTradeLoading] = useState(false)
   const [toast, setToast] = useState(null)
+  const [showFullAnalysis, setShowFullAnalysis] = useState(false)
 
   const popularTickers = ['NVDA', 'AAPL', 'TSLA', 'MSFT', 'META', 'AMZN', 'SPY', 'AMD', 'GOOGL', 'BTC-USD', 'ETH-USD', 'NFLX']
 
@@ -308,18 +313,13 @@ const AITraderScreen = ({ onTradeSuccess }) => {
     setLoading(true)
     setError(null)
     setSignal(null)
+    setShowFullAnalysis(false)
 
     try {
       const response = await fetch('/api/signal', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          ticker: tickerInput,
-          timeframe,
-          risk
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker: tickerInput, timeframe, risk })
       })
 
       if (!response.ok) {
@@ -337,7 +337,7 @@ const AITraderScreen = ({ onTradeSuccess }) => {
   }
 
   const handlePlaceTrade = async () => {
-    if (!signal || signal.signal !== 'BUY') return
+    if (!signal || signal.signal !== 'BUY' || signal.conviction < 60) return
 
     setTradeLoading(true)
     setToast(null)
@@ -367,14 +367,11 @@ const AITraderScreen = ({ onTradeSuccess }) => {
       setToast(data.message)
       console.log('Trade placed:', data)
 
-      // Record the trade in Supabase for per-user portfolio history
       if (entryPrice > 0) {
         await recordTrade({ symbol: tickerInput, side: 'buy', quantity: 1, price: entryPrice })
       }
 
-      if (onTradeSuccess) {
-        onTradeSuccess()
-      }
+      if (onTradeSuccess) onTradeSuccess()
     } catch (err) {
       setToast(err.message)
       console.error('Trade error:', err)
@@ -383,14 +380,25 @@ const AITraderScreen = ({ onTradeSuccess }) => {
     }
   }
 
-  const signalColors = {
-    BUY: { bg: 'bg-emerald-500 bg-opacity-20', border: 'border-emerald-500 border-opacity-40', text: 'text-emerald-400', badge: 'bg-emerald-500' },
-    SELL: { bg: 'bg-red-500 bg-opacity-20', border: 'border-red-500 border-opacity-40', text: 'text-red-400', badge: 'bg-red-500' },
-    HOLD: { bg: 'bg-yellow-500 bg-opacity-20', border: 'border-yellow-500 border-opacity-40', text: 'text-yellow-400', badge: 'bg-yellow-500' }
-  }
+  const verdictStyle = signal
+    ? signal.signal === 'BUY'
+      ? { border: 'border-emerald-500/40', bg: 'bg-emerald-500/10', text: 'text-emerald-400', badgeBg: 'bg-emerald-500' }
+      : signal.signal === 'SELL'
+      ? { border: 'border-red-500/40', bg: 'bg-red-500/10', text: 'text-red-400', badgeBg: 'bg-red-500' }
+      : { border: 'border-yellow-500/40', bg: 'bg-yellow-500/10', text: 'text-yellow-400', badgeBg: 'bg-yellow-500' }
+    : null
 
-  const signalColor = signal ? signalColors[signal.signal] : null
-  
+  const scorecardDimensions = signal?.scorecard
+    ? [
+        { label: 'Technical',    value: signal.scorecard.technical },
+        { label: 'Momentum',     value: signal.scorecard.momentum },
+        { label: 'Sentiment',    value: signal.scorecard.sentiment },
+        { label: 'Fundamentals', value: signal.scorecard.fundamentals },
+      ]
+    : []
+
+  const lowConviction = signal && signal.conviction < 60
+
   return (
     <div className="space-y-6">
       {/* Stock Picker */}
@@ -399,7 +407,7 @@ const AITraderScreen = ({ onTradeSuccess }) => {
         <input
           type="text"
           value={tickerInput}
-          onChange={(e) => setTickerInput(e.target.value)}
+          onChange={(e) => setTickerInput(e.target.value.toUpperCase())}
           onKeyPress={(e) => e.key === 'Enter' && handleRunSignal()}
           placeholder="Enter ticker symbol (e.g., NVDA, AAPL, SPY)"
           className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition"
@@ -416,7 +424,7 @@ const AITraderScreen = ({ onTradeSuccess }) => {
           ))}
         </div>
       </div>
-      
+
       {/* Timeframe Dropdown */}
       <div className="space-y-2">
         <label className="text-white text-sm font-semibold">Timeframe</label>
@@ -446,7 +454,7 @@ const AITraderScreen = ({ onTradeSuccess }) => {
           className="w-full h-2 bg-[#1a1a1a] rounded-lg appearance-none cursor-pointer accent-emerald-500"
         />
       </div>
-      
+
       {/* Run Signal Button */}
       <button
         onClick={handleRunSignal}
@@ -457,88 +465,209 @@ const AITraderScreen = ({ onTradeSuccess }) => {
         {loading ? 'Analyzing...' : 'Run Signal'}
       </button>
 
-      {/* Error Message */}
+      {/* Error */}
       {error && (
-        <div className="bg-red-500 bg-opacity-20 border border-red-500 border-opacity-40 rounded-lg p-4 text-red-300 text-sm">
+        <div className="bg-red-500/20 border border-red-500/40 rounded-lg p-4 text-red-300 text-sm">
           {error}
         </div>
       )}
-      
-      {/* Loading Spinner */}
+
+      {/* Loading */}
       {loading && <Spinner />}
-      
-      {/* Signal Card */}
+
+      {/* Rich Signal Card */}
       {signal && !loading && (
-        <div className={`rounded-2xl p-6 border-2 ${signalColor.bg} ${signalColor.border}`}>
-          <div className="space-y-4">
-            {/* Signal type badge */}
-            <div className="flex justify-center">
-              <span className={`px-4 py-1.5 rounded-full text-xs font-bold ${signalColor.badge} text-white`}>
-                {signal.signal} Signal
-              </span>
-            </div>
-            
-            {/* Ticker and Timeframe */}
-            <div className="text-center">
-              <div className="text-3xl font-bold text-white">{tickerInput}</div>
-              <div className="text-xs text-gray-400">{timeframe} timeframe</div>
-            </div>
+        <div className={`rounded-2xl border-2 overflow-hidden ${verdictStyle.border}`}>
 
-            {/* Reasoning */}
-            <div className="bg-[#0f0f0f] rounded-lg p-4 border border-[#2a2a2a]">
-              <p className="text-gray-300 text-sm">{signal.reasoning}</p>
-            </div>
-
-            {/* Conviction Bar */}
+          {/* Header — ticker + live price */}
+          <div className="flex items-center justify-between px-5 py-4 bg-[#1a1a1a] border-b border-[#2a2a2a]">
             <div>
-              <label className="text-white text-xs font-semibold mb-2 block">Conviction</label>
-              <ProgressBar value={signal.conviction} color="bg-blue-500" />
+              <div className="text-2xl font-bold text-white">{tickerInput.toUpperCase()}</div>
+              <div className="text-xs text-gray-400 mt-0.5">{signal.timeframe}</div>
+            </div>
+            {signal.entry != null && (
+              <div className="text-right">
+                <div className="text-lg font-semibold text-white">${Number(signal.entry).toFixed(2)}</div>
+                <div className="text-xs text-gray-400">entry price</div>
+              </div>
+            )}
+          </div>
+
+          <div className="p-5 space-y-5">
+
+            {/* Verdict + Conviction Bar */}
+            <div className={`rounded-xl p-4 ${verdictStyle.bg}`}>
+              <div className="flex items-center justify-between mb-3">
+                <span className={`text-2xl font-extrabold tracking-wide ${verdictStyle.text}`}>
+                  {signal.signal}
+                </span>
+                <span className={`text-xs font-bold px-3 py-1 rounded-full text-white ${verdictStyle.badgeBg}`}>
+                  {signal.conviction}% conviction
+                </span>
+              </div>
+              <div className="w-full bg-[#0f0f0f] rounded-full h-2">
+                <div
+                  className={`h-2 rounded-full transition-all ${verdictStyle.badgeBg}`}
+                  style={{ width: `${signal.conviction}%` }}
+                />
+              </div>
             </div>
 
-            {/* Risk Bar */}
-            <div>
-              <label className="text-white text-xs font-semibold mb-2 block">Risk</label>
-              <ProgressBar value={signal.risk} color={signal.risk > 70 ? 'bg-red-500' : signal.risk > 40 ? 'bg-yellow-500' : 'bg-emerald-500'} />
-            </div>
-
-            {/* Entry, Target, Stop Loss */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="bg-[#0f0f0f] rounded-lg p-3 border border-[#2a2a2a] text-center">
+            {/* Price Targets + R:R */}
+            <div className="grid grid-cols-4 gap-2">
+              <div className="bg-[#1a1a1a] rounded-lg p-3 border border-[#2a2a2a] text-center">
                 <div className="text-xs text-gray-400 mb-1">Entry</div>
-                <div className="text-white font-semibold">{signal.entry}</div>
+                <div className="text-white font-semibold text-sm">${Number(signal.entry).toFixed(2)}</div>
               </div>
-              <div className="bg-[#0f0f0f] rounded-lg p-3 border border-[#2a2a2a] text-center">
+              <div className="bg-[#1a1a1a] rounded-lg p-3 border border-[#2a2a2a] text-center">
                 <div className="text-xs text-gray-400 mb-1">Target</div>
-                <div className="text-emerald-400 font-semibold">{signal.target}</div>
+                <div className="text-emerald-400 font-semibold text-sm">${Number(signal.target).toFixed(2)}</div>
               </div>
-              <div className="bg-[#0f0f0f] rounded-lg p-3 border border-[#2a2a2a] text-center">
-                <div className="text-xs text-gray-400 mb-1">Stop Loss</div>
-                <div className="text-red-400 font-semibold">{signal.stopLoss}</div>
+              <div className="bg-[#1a1a1a] rounded-lg p-3 border border-[#2a2a2a] text-center">
+                <div className="text-xs text-gray-400 mb-1">Stop</div>
+                <div className="text-red-400 font-semibold text-sm">${Number(signal.stop).toFixed(2)}</div>
+              </div>
+              <div className="bg-[#1a1a1a] rounded-lg p-3 border border-[#2a2a2a] text-center">
+                <div className="text-xs text-gray-400 mb-1">R:R</div>
+                <div className="text-blue-400 font-semibold text-sm">
+                  {signal.riskReward != null ? `${signal.riskReward}x` : '—'}
+                </div>
               </div>
             </div>
 
-            {/* Action Button */}
-            {signal.signal === 'BUY' ? (
+            {/* Scorecard */}
+            {scorecardDimensions.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-white text-xs font-semibold uppercase tracking-wider">Scorecard</span>
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                    signal.scorecard.risk === 'Low'
+                      ? 'bg-emerald-500/20 text-emerald-400'
+                      : signal.scorecard.risk === 'High'
+                      ? 'bg-red-500/20 text-red-400'
+                      : 'bg-yellow-500/20 text-yellow-400'
+                  }`}>
+                    {signal.scorecard.risk} Risk
+                  </span>
+                </div>
+                {scorecardDimensions.map(({ label, value }) => (
+                  <div key={label} className="flex items-center gap-3">
+                    <span className="text-gray-400 text-xs w-24 shrink-0">{label}</span>
+                    <div className="flex-1 bg-[#1a1a1a] rounded-full h-1.5">
+                      <div
+                        className="h-1.5 rounded-full bg-emerald-500"
+                        style={{ width: `${value * 10}%` }}
+                      />
+                    </div>
+                    <span className="text-gray-300 text-xs w-5 text-right">{value}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Bull Case */}
+            {signal.bullCase?.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-white text-xs font-semibold uppercase tracking-wider">Bull Case</span>
+                </div>
+                {signal.bullCase.map((point, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <Check className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />
+                    <span className="text-gray-300 text-sm">{point}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Bear Case */}
+            {signal.bearCase?.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <AlertTriangle className="w-3.5 h-3.5 text-yellow-400" />
+                  <span className="text-white text-xs font-semibold uppercase tracking-wider">Bear Case</span>
+                </div>
+                {signal.bearCase.map((point, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <AlertTriangle className="w-3.5 h-3.5 text-yellow-400 mt-0.5 shrink-0" />
+                    <span className="text-gray-300 text-sm">{point}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Timeframe + Catalyst */}
+            {(signal.timeframe || signal.catalyst) && (
+              <div className="grid grid-cols-2 gap-3">
+                {signal.timeframe && (
+                  <div className="bg-[#1a1a1a] rounded-lg p-3 border border-[#2a2a2a]">
+                    <div className="text-xs text-gray-400 mb-1">Timeframe</div>
+                    <div className="text-white text-sm font-medium">{signal.timeframe}</div>
+                  </div>
+                )}
+                {signal.catalyst && (
+                  <div className="bg-[#1a1a1a] rounded-lg p-3 border border-[#2a2a2a]">
+                    <div className="text-xs text-gray-400 mb-1">Catalyst</div>
+                    <div className="text-white text-sm font-medium">{signal.catalyst}</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Collapsible Full Analysis */}
+            {signal.fullAnalysis && (
+              <div className="border border-[#2a2a2a] rounded-lg overflow-hidden">
+                <button
+                  onClick={() => setShowFullAnalysis(v => !v)}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-[#1a1a1a] hover:bg-[#222] transition text-left"
+                >
+                  <span className="text-white text-xs font-semibold uppercase tracking-wider">Full Analysis</span>
+                  {showFullAnalysis
+                    ? <ChevronUp className="w-4 h-4 text-gray-400" />
+                    : <ChevronDown className="w-4 h-4 text-gray-400" />
+                  }
+                </button>
+                {showFullAnalysis && (
+                  <div className="px-4 py-3 bg-[#0f0f0f]">
+                    <p className="text-gray-300 text-sm leading-relaxed">{signal.fullAnalysis}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Buy Button */}
+            {signal.signal === 'BUY' && !lowConviction ? (
               <button
                 onClick={handlePlaceTrade}
                 disabled={tradeLoading}
-                className={`w-full ${signalColor.badge} hover:opacity-90 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg transition`}
+                className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold py-3 rounded-lg transition"
               >
                 {tradeLoading ? 'Placing Order...' : 'Buy with Alpaca'}
               </button>
+            ) : lowConviction ? (
+              <div className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-gray-500 font-semibold py-3 rounded-lg text-center text-sm">
+                Conviction too low — wait for a better setup.
+              </div>
             ) : (
-              <button className={`w-full ${signalColor.badge} hover:opacity-90 text-white font-semibold py-2.5 rounded-lg transition opacity-50 cursor-not-allowed`}>
-                {signal.signal === 'SELL' ? 'Sell Signal' : 'Hold Signal'}
-              </button>
+              <div className={`w-full text-center font-semibold py-3 rounded-lg text-sm ${
+                signal.signal === 'SELL'
+                  ? 'bg-red-500/10 text-red-400 border border-red-500/30'
+                  : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/30'
+              }`}>
+                {signal.signal === 'SELL' ? 'Sell Signal — no paper short available' : 'Hold — no action recommended'}
+              </div>
             )}
+
           </div>
         </div>
       )}
 
-      {/* Toast Notification */}
+      {/* Toast */}
       {toast && (
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 animate-in fade-in">
-          <div className="bg-emerald-500 text-white px-6 py-3 rounded-lg shadow-lg font-semibold">
+          <div className="bg-emerald-500 text-white px-6 py-3 rounded-lg shadow-lg font-semibold flex items-center gap-2">
+            <Check className="w-4 h-4" />
             {toast}
           </div>
         </div>
