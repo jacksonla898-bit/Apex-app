@@ -1,5 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import './App.css'
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ReferenceLine,
+} from 'recharts'
 import { supabase, recordTrade } from './supabaseClient'
 import Landing from './Landing'
 import Profile from './Profile'
@@ -66,34 +75,6 @@ const Avatar = ({ name, bgColor = 'bg-emerald-500' }) => {
     <div className={`${bgColor} w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm text-white`}>
       {initials}
     </div>
-  )
-}
-
-// Simple Line Chart Component
-const LineChart = ({ data = [45, 52, 48, 65, 58, 72, 68, 75, 82, 70, 78, 85] }) => {
-  const max = Math.max(...data)
-  const min = Math.min(...data)
-  const range = max - min
-  const svgHeight = 80
-  const svgWidth = 100
-  const padding = 5
-  
-  const points = data.map((value, i) => {
-    const x = ((i / (data.length - 1)) * (svgWidth - padding * 2)) + padding
-    const y = svgHeight - padding - ((value - min) / range * (svgHeight - padding * 2))
-    return `${x},${y}`
-  }).join(' ')
-  
-  return (
-    <svg width="100%" height="80" viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="text-emerald-400">
-      <polyline
-        points={points}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
   )
 }
 
@@ -417,6 +398,9 @@ const ExitSignalModal = ({ symbol, userId, currentPrice, onClose, onSell }) => {
 }
 
 // Portfolio Screen
+const TIMEFRAMES = ['1D', '1W', '1M', '3M', '1Y', 'ALL']
+const STARTING_EQUITY = 10000
+
 const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
   const [positions, setPositions]         = useState([])
   const [prices, setPrices]               = useState({})
@@ -426,14 +410,42 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
   const [totalPnl, setTotalPnl]           = useState(0)
   const [loading, setLoading]             = useState(true)
   const [error, setError]                 = useState(null)
-  const [sellTarget, setSellTarget]       = useState(null)     // { symbol, sharesOwned, currentPrice }
-  const [exitBadges, setExitBadges]       = useState({})       // { SYMBOL: { action, conviction } }
-  const [exitTarget, setExitTarget]       = useState(null)     // { symbol, currentPrice, userId }
+  const [sellTarget, setSellTarget]       = useState(null)
+  const [exitBadges, setExitBadges]       = useState({})
+  const [exitTarget, setExitTarget]       = useState(null)
   const [badgesLoading, setBadgesLoading] = useState(false)
+  const [timeframe, setTimeframe]         = useState('1W')
+  const [history, setHistory]             = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState(null)
 
   useEffect(() => {
     loadPortfolio()
   }, [refreshTrigger])
+
+  useEffect(() => {
+    if (!currentUserId) return
+    loadHistory(currentUserId, timeframe)
+  }, [currentUserId, timeframe])
+
+  const loadHistory = async (userId, tf) => {
+    setHistoryLoading(true)
+    try {
+      const res = await fetch('/api/equity-history', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ userId, timeframe: tf }),
+      })
+      if (res.ok) {
+        const { history: h } = await res.json()
+        setHistory(h || [])
+      }
+    } catch (err) {
+      console.error('equity-history fetch error:', err)
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
 
   const loadPortfolio = async () => {
     try {
@@ -454,6 +466,7 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
       }
       const { positions: raw, cash: cashVal, positionsValue: posVal, totalEquity: equityVal, totalPnl: pnlVal } = await res.json()
 
+      setCurrentUserId(session.user.id)
       setPositions((raw || []).map(p => ({
         symbol:        p.symbol,
         qty:           p.qty,
@@ -566,8 +579,78 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
             </p>
           </div>
         </div>
-        <div className="mt-6 h-20">
-          <LineChart />
+        {/* Equity History Chart */}
+        <div className="mt-6">
+          {/* Timeframe pills */}
+          <div className="flex gap-1.5 mb-3">
+            {TIMEFRAMES.map(tf => (
+              <button
+                key={tf}
+                onClick={() => setTimeframe(tf)}
+                className={`px-2.5 py-1 rounded-full text-xs font-semibold transition border ${
+                  timeframe === tf
+                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                    : 'bg-[#0f0f0f] border-[#2a2a2a] text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                {tf}
+              </button>
+            ))}
+          </div>
+
+          {historyLoading ? (
+            <div className="h-28 flex items-center justify-center">
+              <div className="w-5 h-5 border-2 border-[#2a2a2a] border-t-emerald-500 rounded-full animate-spin" />
+            </div>
+          ) : history.length === 0 ? (
+            <div className="h-28 flex items-center justify-center">
+              <p className="text-gray-600 text-xs text-center">Place your first trade to see your equity history.</p>
+            </div>
+          ) : (
+            <div className="h-28">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={history} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                  <XAxis
+                    dataKey="timestamp"
+                    tickFormatter={(ts) => {
+                      const d = new Date(ts)
+                      if (timeframe === '1D') return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                      if (timeframe === '1Y' || timeframe === 'ALL') return d.toLocaleDateString([], { month: 'short', year: '2-digit' })
+                      return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+                    }}
+                    tick={{ fill: '#6b7280', fontSize: 10 }}
+                    axisLine={false}
+                    tickLine={false}
+                    interval="preserveStartEnd"
+                  />
+                  <YAxis
+                    tickFormatter={(v) => `$${(v / 1000).toFixed(1)}k`}
+                    tick={{ fill: '#6b7280', fontSize: 10 }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={42}
+                    domain={['auto', 'auto']}
+                  />
+                  <Tooltip
+                    contentStyle={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 8, fontSize: 12 }}
+                    labelStyle={{ color: '#9ca3af' }}
+                    itemStyle={{ color: totalEquity >= STARTING_EQUITY ? '#10b981' : '#ef4444' }}
+                    labelFormatter={(ts) => new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    formatter={(v) => [`$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 'Equity']}
+                  />
+                  <ReferenceLine y={STARTING_EQUITY} stroke="#374151" strokeDasharray="3 3" />
+                  <Line
+                    type="monotone"
+                    dataKey="totalEquity"
+                    stroke={totalEquity >= STARTING_EQUITY ? '#10b981' : '#ef4444'}
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4, strokeWidth: 0 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
       </div>
 

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { computeEquity, insertSnapshot } from './_lib/computeEquity.js'
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -103,6 +104,10 @@ export default async function handler(req, res) {
             { user_id: userId, cash: newCash, updated_at: new Date().toISOString() },
             { onConflict: 'user_id' }
           )
+        // Fire-and-forget equity snapshot (non-blocking — doesn't delay the trade response)
+        computeEquity(supabase, userId)
+          .then(equity => insertSnapshot(supabase, userId, equity))
+          .catch(err => console.error('Post-trade snapshot error:', err.message))
       } catch (cashErr) {
         console.error('Cash update error:', cashErr.message)
       }
