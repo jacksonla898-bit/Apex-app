@@ -115,24 +115,30 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
       setLoading(true)
       setError(null)
 
-      const res = await fetch('/api/portfolio')
+      const { data: { session }, error: authErr } = await supabase.auth.getSession()
+      if (authErr || !session) throw new Error('Not authenticated')
+
+      const res = await fetch('/api/user-portfolio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: session.user.id }),
+      })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error || `HTTP ${res.status}`)
       }
       const { positions: raw } = await res.json()
 
-      const mapped = (Array.isArray(raw) ? raw : []).map(p => ({
+      setPositions((raw || []).map(p => ({
         symbol:        p.symbol,
-        qty:           parseFloat(p.qty),
-        avgEntryPrice: parseFloat(p.avg_entry_price),
-        costBasis:     parseFloat(p.cost_basis),
-      }))
-      setPositions(mapped)
+        qty:           p.qty,
+        avgEntryPrice: p.avgEntryPrice,
+        costBasis:     p.costBasis,
+      })))
 
       const priceMap = {}
-      for (const p of (Array.isArray(raw) ? raw : [])) {
-        if (p.current_price) priceMap[p.symbol] = parseFloat(p.current_price)
+      for (const p of (raw || [])) {
+        if (p.currentPrice != null) priceMap[p.symbol] = p.currentPrice
       }
       setPrices(priceMap)
     } catch (err) {
