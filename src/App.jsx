@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import './App.css'
 import { supabase, recordTrade } from './supabaseClient'
 import Landing from './Landing'
@@ -698,14 +698,35 @@ const CommunityModal = ({ ticker, onClose }) => {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [usernameMap, setUsernameMap] = useState({})
 
   useEffect(() => {
     fetch(`/api/community-details?symbol=${encodeURIComponent(ticker)}`)
       .then(r => r.ok ? r.json() : Promise.reject(r))
-      .then(setData)
+      .then(d => {
+        setData(d)
+        // Collect all unique userIds to resolve
+        const ids = new Set()
+        d.allHolders?.forEach(h => ids.add(h.userId))
+        d.whales?.forEach(w => ids.add(w.userId))
+        d.recentActivity?.forEach(t => ids.add(t.userId))
+        if (ids.size > 0) {
+          fetch('/api/usernames', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ userIds: [...ids] }),
+          })
+            .then(r => r.ok ? r.json() : {})
+            .then(map => setUsernameMap(map))
+            .catch(() => {})
+        }
+      })
       .catch(() => setError('Failed to load community data'))
       .finally(() => setLoading(false))
   }, [ticker])
+
+  const displayName = (userId) =>
+    usernameMap[userId] ? `@${usernameMap[userId]}` : `${userId.slice(0, 8)}…`
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#0f0f0f]">
@@ -813,7 +834,7 @@ const CommunityModal = ({ ticker, onClose }) => {
                       <div className="flex items-center gap-3">
                         <span className="text-gray-500 text-xs w-4">{i + 1}</span>
                         <div>
-                          <div className="text-white text-sm font-mono">{h.userId.slice(0, 8)}…</div>
+                          <div className="text-white text-sm font-semibold">{displayName(h.userId)}</div>
                           <div className="text-gray-500 text-xs">{h.shares.toFixed(4)} shares @ ${h.avgEntryPrice.toFixed(2)}</div>
                         </div>
                       </div>
@@ -838,7 +859,7 @@ const CommunityModal = ({ ticker, onClose }) => {
                   {data.whales.map((w) => (
                     <div key={w.userId} className="flex items-center justify-between bg-[#1a1a1a] rounded-lg px-4 py-3 border border-[#2a2a2a]">
                       <div>
-                        <div className="text-white text-sm font-mono">{w.userId.slice(0, 8)}…</div>
+                        <div className="text-white text-sm font-semibold">{displayName(w.userId)}</div>
                         <div className="text-emerald-400 text-xs">{w.sentiment}</div>
                       </div>
                       <div className="text-blue-400 text-sm font-semibold">${w.positionValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
@@ -864,7 +885,7 @@ const CommunityModal = ({ ticker, onClose }) => {
                         <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${t.side === 'buy' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
                           {t.side === 'buy' ? 'BUY' : 'SELL'}
                         </span>
-                        <span className="text-gray-300 text-xs font-mono">{t.userId.slice(0, 8)}…</span>
+                        <span className="text-gray-300 text-xs font-semibold">{displayName(t.userId)}</span>
                         <span className="text-gray-500 text-xs">{t.quantity} shares @ ${t.price.toFixed(2)}</span>
                       </div>
                       <span className="text-gray-600 text-xs shrink-0 ml-2">{timeAgo(t.createdAt)}</span>
@@ -1605,10 +1626,123 @@ const AITraderScreen = ({ onTradeSuccess, initialTicker = null }) => {
 }
 
 // Onboarding Flow
+// Reusable username picker — used in onboarding step AND standalone modal
+const UsernamePickerStep = ({ userId, onDone, isModal = false }) => {
+  const [value, setValue]       = useState('')
+  const [status, setStatus]     = useState(null) // null | 'checking' | 'ok' | string(error)
+  const [submitting, setSubmitting] = useState(false)
+  const debounceRef = useRef(null)
+
+  const check = useCallback((username) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    const validationRe = /^[a-zA-Z0-9_]{3,20}$/
+    if (!username) { setStatus(null); return }
+    if (!validationRe.test(username)) {
+      setStatus(username.length < 3 ? 'At least 3 characters' : username.length > 20 ? 'Max 20 characters' : 'Letters, numbers, underscores only')
+      return
+    }
+    setStatus('checking')
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res  = await fetch('/api/set-username', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ username, checkOnly: true }),
+        })
+        const body = await res.json()
+        setStatus(res.ok ? 'ok' : (body.error || 'Unavailable'))
+      } catch {
+        setStatus('Could not check availability')
+      }
+    }, 400)
+  }, [])
+
+  const handleChange = (e) => {
+    const v = e.target.value
+    setValue(v)
+    check(v)
+  }
+
+  const handleSubmit = async () => {
+    if (status !== 'ok' || submitting) return
+    setSubmitting(true)
+    try {
+      const res  = await fetch('/api/set-username', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ userId, username: value }),
+      })
+      const body = await res.json()
+      if (!res.ok) { setStatus(body.error || 'Failed to save'); setSubmitting(false); return }
+      onDone(value)
+    } catch {
+      setStatus('Failed to save username')
+      setSubmitting(false)
+    }
+  }
+
+  const indicator = () => {
+    if (!value) return null
+    if (status === 'checking') return <span className="text-gray-400 text-xs">Checking…</span>
+    if (status === 'ok')       return <span className="text-emerald-400 text-xs flex items-center gap-1"><Check className="w-3 h-3" />Available</span>
+    if (status)                return <span className="text-red-400 text-xs">{status}</span>
+    return null
+  }
+
+  const content = (
+    <div className="flex flex-col flex-1">
+      <div className="flex-1 flex flex-col justify-center space-y-6">
+        <div>
+          <h2 className="text-white font-bold text-2xl mb-2">Pick your username</h2>
+          <p className="text-gray-400 text-sm">This is how other traders will see you.</p>
+        </div>
+        <div className="space-y-3">
+          <div className="relative">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold select-none">@</span>
+            <input
+              type="text"
+              value={value}
+              onChange={handleChange}
+              placeholder="yourname"
+              maxLength={20}
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] focus:border-emerald-500/60 outline-none text-white pl-8 pr-4 py-4 rounded-xl text-base transition"
+            />
+          </div>
+          <div className="h-5 flex items-center">{indicator()}</div>
+          <p className="text-gray-600 text-xs">3–20 characters. Letters, numbers, underscores only.</p>
+        </div>
+      </div>
+      <button
+        onClick={handleSubmit}
+        disabled={status !== 'ok' || submitting}
+        className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-30 disabled:cursor-not-allowed text-white font-bold py-4 rounded-xl transition text-base"
+      >
+        {submitting ? 'Saving…' : 'Continue'}
+      </button>
+    </div>
+  )
+
+  if (isModal) {
+    return (
+      <div className="fixed inset-0 z-50 bg-[#0f0f0f] flex flex-col">
+        <div className="mx-auto max-w-lg w-full flex-1 flex flex-col px-6 pt-16 pb-10">
+          {content}
+        </div>
+      </div>
+    )
+  }
+
+  return content
+}
+
 const OnboardingFlow = ({ userId, onComplete }) => {
   const [step, setStep] = useState(1)
   const [agreed, setAgreed] = useState(false)
   const [completing, setCompleting] = useState(false)
+  const [username, setUsername] = useState(null)
 
   const STOCKS = [
     { symbol: 'AAPL',  name: 'Apple Inc.' },
@@ -1636,7 +1770,7 @@ const OnboardingFlow = ({ userId, onComplete }) => {
       <div className="mx-auto max-w-lg w-full flex-1 flex flex-col px-6 pt-16 pb-10">
         {/* Progress dots */}
         <div className="flex gap-2 mb-12 justify-center">
-          {[1, 2, 3, 4].map(s => (
+          {[1, 2, 3, 4, 5].map(s => (
             <div
               key={s}
               className={`h-1.5 rounded-full transition-all ${s === step ? 'w-8 bg-emerald-500' : s < step ? 'w-4 bg-emerald-500/50' : 'w-4 bg-[#2a2a2a]'}`}
@@ -1707,6 +1841,13 @@ const OnboardingFlow = ({ userId, onComplete }) => {
   )
 
   if (step === 3) return stepWrap(
+    <UsernamePickerStep
+      userId={userId}
+      onDone={(uname) => { setUsername(uname); setStep(4) }}
+    />
+  )
+
+  if (step === 4) return stepWrap(
     <div className="flex flex-col flex-1">
       <div className="flex-1 flex flex-col justify-center space-y-6">
         <div>
@@ -1742,7 +1883,7 @@ const OnboardingFlow = ({ userId, onComplete }) => {
         </div>
       </div>
       <button
-        onClick={() => setStep(4)}
+        onClick={() => setStep(5)}
         className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 rounded-xl transition text-base"
       >
         Continue
@@ -1750,7 +1891,7 @@ const OnboardingFlow = ({ userId, onComplete }) => {
     </div>
   )
 
-  // Step 4 — first action
+  // Step 5 — first action
   return stepWrap(
     <div className="flex flex-col flex-1">
       <div className="flex-1 flex flex-col justify-center space-y-6">
@@ -1795,6 +1936,7 @@ export default function App() {
   const [portfolioRefreshTrigger, setPortfolioRefreshTrigger] = useState(0)
   const [onboardingCompleted, setOnboardingCompleted] = useState(null) // null = not checked yet
   const [initialAiTicker, setInitialAiTicker] = useState(null)
+  const [hasUsername, setHasUsername] = useState(null) // null = not checked yet
 
   useEffect(() => {
     const checkUser = async () => {
@@ -1814,8 +1956,8 @@ export default function App() {
       (event, session) => {
         setUser(session?.user ?? null)
         setLoading(false)
-        // Reset onboarding check on sign-out
-        if (!session) setOnboardingCompleted(null)
+        // Reset onboarding + username check on sign-out
+        if (!session) { setOnboardingCompleted(null); setHasUsername(null) }
       }
     )
 
@@ -1834,6 +1976,20 @@ export default function App() {
       .then(r => r.ok ? r.json() : {})
       .then(data => setOnboardingCompleted(data.onboardingCompleted ?? false))
       .catch(() => setOnboardingCompleted(true)) // if check fails, don't block the app
+  }, [user?.id])
+
+  // Check if user has a username (for existing users who skipped onboarding)
+  useEffect(() => {
+    if (!user) return
+    setHasUsername(null)
+    fetch('/api/usernames', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ userIds: [user.id] }),
+    })
+      .then(r => r.ok ? r.json() : {})
+      .then(map => setHasUsername(!!map[user.id]))
+      .catch(() => setHasUsername(true)) // don't block on failure
   }, [user?.id])
 
   const handleAuthSuccess = () => {}
@@ -1902,8 +2058,8 @@ export default function App() {
     }
   }
 
-  // Show loading spinner while checking authentication or onboarding status
-  if (loading || (user && onboardingCompleted === null)) {
+  // Show loading spinner while checking authentication, onboarding status, or username
+  if (loading || (user && (onboardingCompleted === null || hasUsername === null))) {
     return (
       <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center">
         <div className="w-12 h-12 border-4 border-[#2a2a2a] border-t-emerald-500 rounded-full animate-spin"></div>
@@ -1919,6 +2075,17 @@ export default function App() {
   // Show onboarding if not completed
   if (onboardingCompleted === false) {
     return <OnboardingFlow userId={user.id} onComplete={handleOnboardingComplete} />
+  }
+
+  // Existing users who never picked a username — show mandatory picker
+  if (hasUsername === false) {
+    return (
+      <UsernamePickerStep
+        userId={user.id}
+        isModal={true}
+        onDone={() => setHasUsername(true)}
+      />
+    )
   }
   
   return (
