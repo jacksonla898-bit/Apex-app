@@ -108,6 +108,138 @@ const ProgressBar = ({ value, color = 'bg-emerald-500' }) => (
 )
 
 
+// Sell Modal
+const SellModal = ({ symbol, sharesOwned, currentPrice, onClose, onSold }) => {
+  const [qty, setQty]           = useState(1)
+  const [sentiment, setSentiment] = useState(null)
+  const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState(null)
+
+  const sentimentOptions = [
+    { value: 'high',    icon: <Zap className="w-5 h-5 text-yellow-400" />,   label: 'Taking profits',   subtitle: 'Strong conviction exit' },
+    { value: 'regular', icon: <Check className="w-5 h-5 text-emerald-400" />, label: 'Regular sell',     subtitle: 'Standard exit' },
+    { value: 'test',    icon: <Activity className="w-5 h-5 text-blue-400" />, label: 'Trimming',         subtitle: 'Reducing exposure' },
+  ]
+
+  const handleSell = async () => {
+    if (!sentiment) { setError('Pick a conviction level.'); return }
+    setError(null)
+    setLoading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const userId = session?.user?.id
+
+      const response = await fetch('/api/trade', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticker: symbol,
+          qty,
+          side:   'sell',
+          userId,
+          price:  currentPrice,
+        }),
+      })
+
+      if (!response.ok) {
+        const body = await response.json()
+        throw new Error(body.error || 'Sell failed')
+      }
+
+      // Record in Supabase with sentiment
+      await recordTrade({ symbol, side: 'sell', quantity: qty, price: currentPrice, sentiment })
+
+      onSold()
+      onClose()
+    } catch (err) {
+      setError(err.message)
+      console.error('Sell error:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const proceeds = (qty * (currentPrice || 0))
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70">
+      <div className="w-full max-w-lg bg-[#1a1a1a] rounded-t-2xl border-t border-[#2a2a2a] p-5 space-y-4">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-white font-bold text-lg">{symbol}</div>
+            <div className="text-gray-400 text-xs">
+              {sharesOwned} shares owned · ${Number(currentPrice).toFixed(2)} current price
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-[#2a2a2a] rounded-lg transition">
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        {/* Quantity */}
+        <div className="space-y-1">
+          <label className="text-white text-sm font-semibold">Quantity</label>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setQty(q => Math.max(1, q - 1))}
+              className="w-10 h-10 rounded-lg bg-[#2a2a2a] hover:bg-[#333] text-white font-bold transition"
+            >−</button>
+            <input
+              type="number"
+              min={1}
+              max={sharesOwned}
+              value={qty}
+              onChange={e => setQty(Math.min(sharesOwned, Math.max(1, parseInt(e.target.value) || 1)))}
+              className="flex-1 bg-[#0f0f0f] border border-[#2a2a2a] text-white text-center px-4 py-2 rounded-lg"
+            />
+            <button
+              onClick={() => setQty(q => Math.min(sharesOwned, q + 1))}
+              className="w-10 h-10 rounded-lg bg-[#2a2a2a] hover:bg-[#333] text-white font-bold transition"
+            >+</button>
+          </div>
+          <div className="flex justify-between text-xs text-gray-500 pt-1">
+            <span>Proceeds: <span className="text-emerald-400 font-semibold">${proceeds.toFixed(2)}</span></span>
+            <button onClick={() => setQty(sharesOwned)} className="text-emerald-400 hover:underline">Sell all</button>
+          </div>
+        </div>
+
+        {/* Sentiment */}
+        <div className="space-y-2">
+          <div className="text-white text-sm font-semibold">Why are you selling?</div>
+          {sentimentOptions.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setSentiment(opt.value)}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl border transition text-left ${
+                sentiment === opt.value
+                  ? 'border-red-500/60 bg-red-500/10'
+                  : 'border-[#2a2a2a] bg-[#0f0f0f] hover:bg-[#1a1a1a]'
+              }`}
+            >
+              {opt.icon}
+              <div>
+                <div className="text-white font-semibold text-sm">{opt.label}</div>
+                <div className="text-gray-500 text-xs">{opt.subtitle}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {error && <div className="text-red-400 text-sm">{error}</div>}
+
+        <button
+          onClick={handleSell}
+          disabled={loading || !sentiment}
+          className="w-full bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white font-bold py-3 rounded-lg transition"
+        >
+          {loading ? 'Placing Order...' : `Confirm Sell · ${qty} share${qty > 1 ? 's' : ''}`}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // Portfolio Screen
 const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
   const [positions, setPositions]         = useState([])
@@ -118,6 +250,7 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
   const [totalPnl, setTotalPnl]           = useState(0)
   const [loading, setLoading]             = useState(true)
   const [error, setError]                 = useState(null)
+  const [sellTarget, setSellTarget]       = useState(null)  // { symbol, sharesOwned, currentPrice }
 
   useEffect(() => {
     loadPortfolio()
@@ -280,14 +413,22 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
                       <div className="text-gray-500 text-xs">Market Value</div>
                       <div className="text-white text-sm font-medium">${fmt(marketValue)}</div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-gray-500 text-xs">Unrealized P&L</div>
-                      <div className={`text-sm font-bold ${isGain ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {isGain ? '+' : ''}${fmt(pl)}{' '}
-                        <span className="text-xs font-semibold">
-                          ({isGain ? '+' : ''}{plPct.toFixed(2)}%)
-                        </span>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <div className="text-gray-500 text-xs">Unrealized P&L</div>
+                        <div className={`text-sm font-bold ${isGain ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {isGain ? '+' : ''}${fmt(pl)}{' '}
+                          <span className="text-xs font-semibold">
+                            ({isGain ? '+' : ''}{plPct.toFixed(2)}%)
+                          </span>
+                        </div>
                       </div>
+                      <button
+                        onClick={() => setSellTarget({ symbol: position.symbol, sharesOwned: Math.floor(position.qty), currentPrice })}
+                        className="px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-semibold transition"
+                      >
+                        Sell
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -296,6 +437,17 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
           </div>
         )}
       </div>
+
+      {/* Sell Modal */}
+      {sellTarget && (
+        <SellModal
+          symbol={sellTarget.symbol}
+          sharesOwned={sellTarget.sharesOwned}
+          currentPrice={sellTarget.currentPrice}
+          onClose={() => setSellTarget(null)}
+          onSold={() => { setSellTarget(null); loadPortfolio() }}
+        />
+      )}
     </div>
   )
 }
@@ -568,6 +720,8 @@ const AITraderScreen = ({ onTradeSuccess }) => {
   const [topTradersData, setTopTradersData] = useState(null)
   const [showCommunityModal, setShowCommunityModal] = useState(false)
   const [showSentimentPicker, setShowSentimentPicker] = useState(false)
+  const [userPositions, setUserPositions] = useState([])
+  const [sellTarget, setSellTarget] = useState(null)
 
   const popularTickers = ['NVDA', 'AAPL', 'TSLA', 'MSFT', 'META', 'AMZN', 'SPY', 'AMD', 'GOOGL', 'BTC-USD', 'ETH-USD', 'NFLX']
 
@@ -580,7 +734,9 @@ const AITraderScreen = ({ onTradeSuccess }) => {
     setShowFullAnalysis(false)
 
     try {
-      const [signalRes, communityRes, topTradersRes] = await Promise.all([
+      const { data: { session } } = await supabase.auth.getSession()
+
+      const [signalRes, communityRes, topTradersRes, portfolioRes] = await Promise.all([
         fetch('/api/signal', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -588,21 +744,30 @@ const AITraderScreen = ({ onTradeSuccess }) => {
         }),
         fetch(`/api/community-conviction?symbol=${encodeURIComponent(tickerInput)}`),
         fetch(`/api/top-traders?symbol=${encodeURIComponent(tickerInput)}`),
+        session?.user?.id
+          ? fetch('/api/user-portfolio', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: session.user.id }),
+            })
+          : Promise.resolve(null),
       ])
 
       if (!signalRes.ok) {
         throw new Error('Failed to generate signal')
       }
 
-      const [signalData, communityJson, topTradersJson] = await Promise.all([
+      const [signalData, communityJson, topTradersJson, portfolioJson] = await Promise.all([
         signalRes.json(),
         communityRes.ok ? communityRes.json() : null,
         topTradersRes.ok ? topTradersRes.json() : null,
+        portfolioRes?.ok ? portfolioRes.json() : null,
       ])
 
       setSignal(signalData)
       setCommunityData(communityJson)
       setTopTradersData(topTradersJson)
+      setUserPositions(portfolioJson?.positions ?? [])
     } catch (err) {
       setError(err.message)
       console.error('Error:', err)
@@ -1023,14 +1188,36 @@ const AITraderScreen = ({ onTradeSuccess }) => {
               <div className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-gray-500 font-semibold py-3 rounded-lg text-center text-sm">
                 Conviction too low — wait for a better setup.
               </div>
-            ) : (
-              <div className={`w-full text-center font-semibold py-3 rounded-lg text-sm ${
-                signal.signal === 'SELL'
-                  ? 'bg-red-500/10 text-red-400 border border-red-500/30'
-                  : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/30'
-              }`}>
-                {signal.signal === 'SELL' ? 'Sell Signal — no paper short available' : 'Hold — no action recommended'}
+            ) : signal.signal === 'SELL' ? (() => {
+              const held = userPositions.find(p => p.symbol === tickerInput.toUpperCase())
+              return held ? (
+                <button
+                  onClick={() => setSellTarget({ symbol: held.symbol, sharesOwned: Math.floor(held.qty), currentPrice: signal.entry })}
+                  disabled={tradeLoading}
+                  className="w-full bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white font-bold py-3 rounded-lg transition"
+                >
+                  Sell {held.symbol} with Alpaca
+                </button>
+              ) : (
+                <div className="w-full text-center font-semibold py-3 rounded-lg text-sm bg-red-500/10 text-red-400 border border-red-500/30">
+                  Sell Signal — you don't hold {tickerInput.toUpperCase()}
+                </div>
+              )
+            })() : (
+              <div className="w-full text-center font-semibold py-3 rounded-lg text-sm bg-yellow-500/10 text-yellow-400 border border-yellow-500/30">
+                Hold — no action recommended
               </div>
+            )}
+
+            {/* Sell Modal (from signal card) */}
+            {sellTarget && (
+              <SellModal
+                symbol={sellTarget.symbol}
+                sharesOwned={sellTarget.sharesOwned}
+                currentPrice={sellTarget.currentPrice}
+                onClose={() => setSellTarget(null)}
+                onSold={() => { setSellTarget(null); if (onTradeSuccess) onTradeSuccess() }}
+              />
             )}
 
             {/* Sentiment picker */}

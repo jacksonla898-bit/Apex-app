@@ -14,6 +14,40 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Ticker and side are required' })
     }
 
+    const supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    )
+
+    // For sell orders, verify the user holds enough shares
+    if (side.toLowerCase() === 'sell') {
+      if (!userId) {
+        return res.status(400).json({ error: 'userId is required for sell orders' })
+      }
+
+      const { data: trades, error: tradesErr } = await supabase
+        .from('trades')
+        .select('side, quantity')
+        .eq('user_id', userId)
+        .ilike('symbol', ticker)
+        .order('created_at', { ascending: true })
+
+      if (tradesErr) {
+        console.error('Ownership check error:', tradesErr.message, tradesErr.code, tradesErr.hint)
+        return res.status(500).json({ error: 'Failed to verify share ownership' })
+      }
+
+      let netQty = 0
+      for (const t of (trades || [])) {
+        const q = parseFloat(t.quantity)
+        netQty += t.side === 'buy' ? q : -q
+      }
+
+      if (netQty < parseFloat(qty)) {
+        return res.status(400).json({ error: 'Insufficient shares.' })
+      }
+    }
+
     const headers = {
       'APCA-API-KEY-ID':     process.env.ALPACA_API_KEY,
       'APCA-API-SECRET-KEY': process.env.ALPACA_SECRET_KEY,
@@ -48,20 +82,12 @@ export default async function handler(req, res) {
     // Update cash balance if we have a userId
     if (userId) {
       try {
-        const supabase = createClient(
-          process.env.SUPABASE_URL,
-          process.env.SUPABASE_SERVICE_ROLE_KEY
-        )
-
-        // Use fill price from Alpaca if available, otherwise fall back to the
-        // client-supplied price estimate (signal entry price)
         const fillPrice = parseFloat(order.filled_avg_price) || parseFloat(price) || 0
         const tradeQty  = parseFloat(qty)
         const cashDelta = side.toLowerCase() === 'buy'
           ? -(tradeQty * fillPrice)
           :  (tradeQty * fillPrice)
 
-        // Get current balance (or default to $10,000 if no row yet)
         const { data: balanceRow } = await supabase
           .from('user_balances')
           .select('cash')
@@ -78,7 +104,6 @@ export default async function handler(req, res) {
             { onConflict: 'user_id' }
           )
       } catch (cashErr) {
-        // Cash update failure is non-fatal — order already went through
         console.error('Cash update error:', cashErr.message)
       }
     }
