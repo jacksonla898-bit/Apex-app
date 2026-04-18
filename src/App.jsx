@@ -431,7 +431,7 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
   const loadHistory = async (userId, tf) => {
     setHistoryLoading(true)
     try {
-      const res = await fetch('/api/equity-history', {
+      const res = await fetch('/api/equity', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ userId, timeframe: tf }),
@@ -1739,7 +1739,7 @@ const UsernamePickerStep = ({ userId, onDone, isModal = false }) => {
     setStatus('checking')
     debounceRef.current = setTimeout(async () => {
       try {
-        const res  = await fetch('/api/set-username', {
+        const res  = await fetch('/api/usernames', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({ username, checkOnly: true }),
@@ -1762,7 +1762,7 @@ const UsernamePickerStep = ({ userId, onDone, isModal = false }) => {
     if (status !== 'ok' || submitting) return
     setSubmitting(true)
     try {
-      const res  = await fetch('/api/set-username', {
+      const res  = await fetch('/api/usernames', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ userId, username: value }),
