@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
+import { fetchPolygonPrices } from '../lib/polygonPrices.js'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -74,31 +75,20 @@ export default async function handler(req, res) {
     const avgEntryPrice = totalCost / totalQty
     const costBasis     = totalCost
 
-    // Fetch current price from Alpaca
+    // Fetch current price and market data from Polygon
     let currentPrice = null
     let priceData    = ''
     try {
-      const snapshotRes = await fetch(
-        `https://data.alpaca.markets/v2/stocks/snapshots?symbols=${encodeURIComponent(symbol.toUpperCase())}`,
-        {
-          headers: {
-            'APCA-API-KEY-ID':     process.env.ALPACA_API_KEY,
-            'APCA-API-SECRET-KEY': process.env.ALPACA_SECRET_KEY,
-          },
-        }
-      )
-      if (snapshotRes.ok) {
-        const snapshots = await snapshotRes.json()
-        const snap = snapshots[symbol.toUpperCase()]
-        currentPrice = snap?.latestTrade?.p ?? snap?.dailyBar?.c ?? null
-        if (snap?.dailyBar) {
-          const d = snap.dailyBar
-          const changePct = d.o ? (((d.c - d.o) / d.o) * 100).toFixed(2) : 'N/A'
-          priceData = `Current: $${currentPrice}, Open: $${d.o}, High: $${d.h}, Low: $${d.l}, Close: $${d.c}, Volume: ${d.v}, Change today: ${changePct}%`
-        }
+      const polygonPrices = await fetchPolygonPrices([symbol.toUpperCase()])
+      const result = polygonPrices.get(symbol.toUpperCase())
+      currentPrice = result?.price ?? null
+      if (result?.dailyBar) {
+        const d = result.dailyBar
+        const changePct = d.o ? (((d.c - d.o) / d.o) * 100).toFixed(2) : 'N/A'
+        priceData = `Current: $${currentPrice}, Open: $${d.o}, High: $${d.h}, Low: $${d.l}, Close: $${d.c}, Volume: ${d.v}, Change today: ${changePct}%`
       }
     } catch (err) {
-      console.error('Alpaca fetch failed:', err.message)
+      console.error('Polygon fetch failed:', err.message)
     }
 
     // Compute P&L server-side

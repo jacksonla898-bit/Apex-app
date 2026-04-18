@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { fetchPolygonPrices } from '../lib/polygonPrices.js'
 
 const SENTIMENT_WEIGHT = { high: 1.5, regular: 1.0, test: 0.5 }
 const sentimentWeight = (s) => SENTIMENT_WEIGHT[s] ?? 1.0
@@ -71,25 +72,13 @@ export default async function handler(req, res) {
       }
     }
 
-    // Fetch current price from Alpaca
+    // Fetch current price from Polygon
     let currentPrice = null
     try {
-      const snapshotRes = await fetch(
-        `https://data.alpaca.markets/v2/stocks/snapshots?symbols=${encodeURIComponent(symbol.toUpperCase())}`,
-        {
-          headers: {
-            'APCA-API-KEY-ID':     process.env.ALPACA_API_KEY,
-            'APCA-API-SECRET-KEY': process.env.ALPACA_SECRET_KEY,
-          },
-        }
-      )
-      if (snapshotRes.ok) {
-        const snapshots = await snapshotRes.json()
-        const snap = snapshots[symbol.toUpperCase()]
-        currentPrice = snap?.latestTrade?.p ?? snap?.dailyBar?.c ?? null
-      }
+      const polygonPrices = await fetchPolygonPrices([symbol.toUpperCase()])
+      currentPrice = polygonPrices.get(symbol.toUpperCase())?.price ?? null
     } catch (err) {
-      console.error('Alpaca snapshot fetch failed:', err.message)
+      console.error('Polygon snapshot fetch failed:', err.message)
     }
 
     // Build holders list

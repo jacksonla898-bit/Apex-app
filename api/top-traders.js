@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { fetchPolygonPrices } from '../lib/polygonPrices.js'
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -58,29 +59,16 @@ export default async function handler(req, res) {
       for (const t of trades) allSymbols.add(t.symbol)
     }
 
-    // Fetch current prices from Alpaca snapshots
+    // Fetch current prices from Polygon
     const priceMap = {}
     if (allSymbols.size > 0) {
       try {
-        const symbolList = [...allSymbols].join(',')
-        const snapshotRes = await fetch(
-          `https://data.alpaca.markets/v2/stocks/snapshots?symbols=${encodeURIComponent(symbolList)}`,
-          {
-            headers: {
-              'APCA-API-KEY-ID':     process.env.ALPACA_API_KEY,
-              'APCA-API-SECRET-KEY': process.env.ALPACA_SECRET_KEY,
-            },
-          }
-        )
-        if (snapshotRes.ok) {
-          const snapshots = await snapshotRes.json()
-          for (const [sym, snap] of Object.entries(snapshots)) {
-            const price = snap?.latestTrade?.p ?? snap?.dailyBar?.c ?? null
-            if (price != null) priceMap[sym] = price
-          }
+        const polygonPrices = await fetchPolygonPrices([...allSymbols])
+        for (const [sym, data] of polygonPrices) {
+          if (data.price != null) priceMap[sym] = data.price
         }
       } catch (err) {
-        console.error('Alpaca snapshot fetch failed, using entry prices:', err.message)
+        console.error('Polygon snapshot fetch failed, using entry prices:', err.message)
       }
     }
 
