@@ -84,7 +84,7 @@ const Profile = ({ userId, currentUser, onBack, onResetOnboarding }) => {
 
       if (error) throw error
       setPosts(data || [])
-      if (currentUser) fetchUserLikes()
+      if (currentUser?.id && userId) fetchUserLikes()
     } catch (err) {
       console.error('Error fetching posts:', err)
     }
@@ -299,7 +299,7 @@ const Profile = ({ userId, currentUser, onBack, onResetOnboarding }) => {
       </button>
 
       {/* Profile Header */}
-      <div className="bg-[#1a1a1a] rounded-2xl p-6 border border-[#2a2a2a] space-y-4">
+      <div className="bg-[#1a1a1a] rounded-2xl p-5 border border-[#2a2a2a] space-y-4">
         {/* Avatar and Name */}
         <div className="flex items-start justify-between">
           <div className="flex gap-4">

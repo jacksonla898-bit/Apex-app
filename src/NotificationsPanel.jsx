@@ -42,8 +42,8 @@ function notifTarget(notif) {
 function Avatar({ username }) {
   const letter = username ? username[0].toUpperCase() : '?'
   return (
-    <div className="w-9 h-9 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0">
-      <span className="text-emerald-400 font-bold text-sm">{letter}</span>
+    <div className="w-9 h-9 rounded-full bg-emerald-500 flex items-center justify-center shrink-0">
+      <span className="text-white font-bold text-sm">{letter}</span>
     </div>
   )
 }

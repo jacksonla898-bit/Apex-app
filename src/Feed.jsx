@@ -143,9 +143,24 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
     supabase.auth.getUser().then(({ data: { user } }) => setUser(user))
   }, [])
 
-  // Fetch user's own likes whenever user is resolved
+  // Fetch user's own likes whenever user is resolved (defined inline to avoid stale closure)
   useEffect(() => {
-    if (user) fetchUserLikes()
+    if (!user) return
+    const fetchUserLikes = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('likes')
+          .select('post_id')
+          .eq('user_id', user.id)
+        if (error) throw error
+        const map = {}
+        data?.forEach(like => { map[like.post_id] = true })
+        setUserLikes(map)
+      } catch (err) {
+        console.error('Error fetching user likes:', err)
+      }
+    }
+    fetchUserLikes()
   }, [user])
 
   // Initial data load + realtime subscriptions (all on mount, not gated on user)
@@ -420,7 +435,7 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
           const isReplyOpen = openReplies.has(post.id)
 
           return (
-            <div key={post.id} className="bg-[#1a1a1a] rounded-2xl p-4 border border-[#2a2a2a] space-y-3">
+            <div key={post.id} className="bg-[#1a1a1a] rounded-2xl p-5 border border-[#2a2a2a] space-y-3">
               {/* Header */}
               <div className="flex items-center justify-between">
                 <div>
@@ -492,10 +507,15 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
               {isReplyOpen && (
                 <div className="pt-3 border-t border-[#2a2a2a] space-y-3">
                   {/* Existing replies */}
+                  {postReplies.length === 0 && (
+                    <p className="text-gray-500 text-xs text-center py-2">
+                      No replies yet. Be the first to respond.
+                    </p>
+                  )}
                   {postReplies.length > 0 && (
                     <div className="space-y-2">
                       {postReplies.map((reply) => (
-                        <div key={reply.id} className="bg-[#0f0f0f] rounded-xl p-3 border border-[#2a2a2a]">
+                        <div key={reply.id} className="bg-[#1a1a1a] rounded-xl p-3 border border-[#2a2a2a]">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-white text-xs font-semibold flex items-center gap-1">
                               {reply.username}

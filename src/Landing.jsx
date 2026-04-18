@@ -125,12 +125,14 @@ const Landing = ({ onAuthSuccess }) => {
           </div>
           <div className="flex items-center gap-3">
             <button
+              type="button"
               onClick={openAuth}
               className="text-gray-300 hover:text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-white/5 transition"
             >
               Sign In
             </button>
             <button
+              type="button"
               onClick={openAuth}
               className="bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold px-5 py-2 rounded-lg transition"
             >
@@ -181,12 +183,14 @@ const Landing = ({ onAuthSuccess }) => {
 
               <div className="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start">
                 <button
+                  type="button"
                   onClick={openAuth}
                   className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-8 py-4 rounded-xl transition text-base w-full sm:w-auto justify-center"
                 >
                   Get Started Free <ArrowRight className="w-5 h-5" />
                 </button>
                 <button
+                  type="button"
                   onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
                   className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold px-8 py-4 rounded-xl transition text-base w-full sm:w-auto justify-center"
                 >
@@ -361,6 +365,7 @@ const Landing = ({ onAuthSuccess }) => {
                 Join Conviction and start running AI-powered signals today. It's free.
               </p>
               <button
+                type="button"
                 onClick={openAuth}
                 className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-10 py-4 rounded-xl transition text-base mx-auto"
               >

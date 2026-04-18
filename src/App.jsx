@@ -151,7 +151,7 @@ const SellModal = ({ symbol, sharesOwned, currentPrice, onClose, onSold }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70">
-      <div className="w-full max-w-lg bg-[#1a1a1a] rounded-t-2xl border-t border-[#2a2a2a] p-5 space-y-4">
+      <div className="w-full max-w-lg bg-[#1a1a1a] rounded-t-2xl border-t border-[#2a2a2a] p-5 space-y-4 max-h-[85vh] overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -160,7 +160,7 @@ const SellModal = ({ symbol, sharesOwned, currentPrice, onClose, onSold }) => {
               {sharesOwned} shares owned · ${Number(currentPrice).toFixed(2)} current price
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-[#2a2a2a] rounded-lg transition">
+          <button type="button" onClick={onClose} className="p-2 hover:bg-[#2a2a2a] rounded-lg transition">
             <X className="w-5 h-5 text-gray-400" />
           </button>
         </div>
@@ -1054,7 +1054,7 @@ const BuyModal = ({ symbol, price, cash, onClose, onBought }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70">
-      <div className="w-full max-w-lg bg-[#1a1a1a] rounded-t-2xl border-t border-[#2a2a2a] p-5 space-y-4">
+      <div className="w-full max-w-lg bg-[#1a1a1a] rounded-t-2xl border-t border-[#2a2a2a] p-5 space-y-4 max-h-[85vh] overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -1063,7 +1063,7 @@ const BuyModal = ({ symbol, price, cash, onClose, onBought }) => {
               ${Number(price).toFixed(2)} · <span className="text-emerald-400">${Number(cash).toLocaleString('en-US', { maximumFractionDigits: 2 })} available</span>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-[#2a2a2a] rounded-lg transition">
+          <button type="button" onClick={onClose} className="p-2 hover:bg-[#2a2a2a] rounded-lg transition">
             <X className="w-5 h-5 text-gray-400" />
           </button>
         </div>
