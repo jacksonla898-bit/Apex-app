@@ -53,7 +53,7 @@ const LeaderboardScreen = ({ user }) => {
   }, [toast])
 
   const displayName = (userId) =>
-    usernameMap[userId] ? `@${usernameMap[userId]}` : `${userId.slice(0, 8)}…`
+    usernameMap[userId] ? `@${usernameMap[userId]}` : 'Trader'
 
   const TIME_FILTERS = [
     { id: 'all', label: 'All Time' },

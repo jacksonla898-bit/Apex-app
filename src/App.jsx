@@ -814,7 +814,7 @@ const CommunityModal = ({ ticker, onClose }) => {
   }, [ticker])
 
   const displayName = (userId) =>
-    usernameMap[userId] ? `@${usernameMap[userId]}` : `${userId.slice(0, 8)}…`
+    usernameMap[userId] ? `@${usernameMap[userId]}` : 'Trader'
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#0f0f0f]">

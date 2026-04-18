@@ -29,36 +29,23 @@ const Profile = ({ userId, currentUser, onBack, onResetOnboarding }) => {
 
   const fetchProfile = async () => {
     try {
-      // Get current logged-in user
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError) throw userError
-
-      console.log('Current user ID:', user?.id)
-      console.log('Profile userId prop:', userId)
-
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', user.id)
+        .eq('id', userId)
         .single()
 
-      console.log('Profile query result:', data)
-      console.log('Profile query error:', error)
-
       if (error) {
-        // Profile doesn't exist, create one automatically
-        if (error.code === 'PGRST116') {
-          console.log('Profile not found, creating new profile...')
-
-          // Get email from currentUser
-          const email = user?.email || `user_${user.id.slice(0, 8)}`
+        // Profile doesn't exist — only auto-create for own profile
+        if (error.code === 'PGRST116' && currentUser?.id === userId) {
+          const email = currentUser.email || `user_${userId.slice(0, 8)}`
           const username = email.split('@')[0]
 
           const { data: newProfile, error: insertError } = await supabase
             .from('profiles')
             .insert([{
-              id: user.id,
-              username: username,
+              id: userId,
+              username,
               bio: '',
               followers: 0,
               following: 0,
@@ -71,8 +58,7 @@ const Profile = ({ userId, currentUser, onBack, onResetOnboarding }) => {
           setProfile(newProfile)
           setEditUsername(newProfile.username || '')
           setEditBio(newProfile.bio || '')
-          console.log('Profile created successfully:', newProfile)
-        } else {
+        } else if (error.code !== 'PGRST116') {
           throw error
         }
       } else {

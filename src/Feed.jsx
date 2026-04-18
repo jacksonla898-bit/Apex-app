@@ -123,6 +123,8 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
   const [openReplies, setOpenReplies] = useState(new Set())
   // replyInput: { [postId]: string } — per-post draft text
   const [replyInput, setReplyInput] = useState({})
+  // replySubmitting: Set of postIds currently being submitted
+  const [replySubmitting, setReplySubmitting] = useState(new Set())
 
   // Resolve current user once on mount
   useEffect(() => {
@@ -311,6 +313,9 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
     const content = (replyInput[postId] || '').trim()
     if (!content) return
     if (!user) { setToast('Please log in to reply'); return }
+    if (replySubmitting.has(postId)) return
+
+    setReplySubmitting(prev => new Set(prev).add(postId))
 
     // Optimistic: show reply immediately
     const tempId = `temp-${Date.now()}`
@@ -349,6 +354,12 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
         [postId]: (prev[postId] || []).filter(r => r.id !== tempId)
       }))
       setToast('Failed to post reply')
+    } finally {
+      setReplySubmitting(prev => {
+        const next = new Set(prev)
+        next.delete(postId)
+        return next
+      })
     }
   }
 
@@ -495,10 +506,13 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
                     />
                     <button
                       onClick={() => handleReply(post.id)}
-                      disabled={!(replyInput[post.id] || '').trim()}
+                      disabled={!(replyInput[post.id] || '').trim() || replySubmitting.has(post.id)}
                       className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white px-3 py-2 rounded-lg transition"
                     >
-                      <Send className="w-4 h-4" />
+                      {replySubmitting.has(post.id)
+                        ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        : <Send className="w-4 h-4" />
+                      }
                     </button>
                   </div>
                 </div>
