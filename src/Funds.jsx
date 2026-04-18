@@ -18,16 +18,35 @@ const Toast = ({ message, onClose }) => {
   )
 }
 
+const FOCUS_RING = 'focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-[#0f0f0f]'
+
+function FieldError({ msg }) {
+  return msg ? <p className="text-red-400 text-xs mt-1">{msg}</p> : null
+}
+
 // ── Create Fund Modal ──────────────────────────────────────────────────────────
 const CreateFundModal = ({ onSubmit, onCancel }) => {
   const [form, setForm] = useState({ name: '', description: '', strategy: '', minInvestment: '' })
+  const [errors, setErrors] = useState({})
   const [loading, setLoading] = useState(false)
 
   const set = (field) => (e) => setForm(prev => ({ ...prev, [field]: e.target.value }))
 
+  const validate = () => {
+    const e = {}
+    if (form.name.trim().length < 3)  e.name = 'Fund name must be at least 3 characters.'
+    if (form.name.trim().length > 50) e.name = 'Fund name must be 50 characters or fewer.'
+    if (form.description.length > 280) e.description = 'Description must be 280 characters or fewer.'
+    const min = parseFloat(form.minInvestment)
+    if (!form.minInvestment || isNaN(min)) e.minInvestment = 'Enter a valid dollar amount.'
+    else if (min <= 0) e.minInvestment = 'Minimum investment must be greater than $0.'
+    return e
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!form.name.trim() || !form.minInvestment) return
+    const errs = validate()
+    if (Object.keys(errs).length > 0) { setErrors(errs); return }
     setLoading(true)
     await onSubmit(form)
     setLoading(false)
@@ -38,32 +57,46 @@ const CreateFundModal = ({ onSubmit, onCancel }) => {
       <div className="bg-[#0f0f0f] rounded-2xl border border-[#2a2a2a] p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-white font-bold text-lg">Create a Fund</h2>
-          <button onClick={onCancel} className="text-gray-400 hover:text-white transition">
+          <button onClick={onCancel} aria-label="Close" className={`text-gray-400 hover:text-white transition rounded ${FOCUS_RING}`}>
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="text-white text-sm font-semibold block mb-2">Fund Name</label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-white text-sm font-semibold">Fund Name</label>
+              <span className={`text-xs tabular-nums ${form.name.length > 45 ? 'text-yellow-400' : 'text-gray-500'}`}>{form.name.length}/50</span>
+            </div>
             <input
               value={form.name}
               onChange={set('name')}
               placeholder="e.g., Conviction Growth Fund"
-              required
-              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] focus:outline-none focus:border-emerald-500/50 transition"
+              maxLength={50}
+              className={`w-full bg-[#1a1a1a] border text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition ${FOCUS_RING} ${errors.name ? 'border-red-500/60' : 'border-[#2a2a2a]'}`}
             />
+            <FieldError msg={errors.name} />
           </div>
 
           <div>
-            <label className="text-white text-sm font-semibold block mb-2">Description</label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-white text-sm font-semibold">Description</label>
+              {(() => {
+                const len = form.description.length
+                const pct = len / 280
+                const color = pct >= 1 ? 'text-red-400' : pct >= 0.8 ? 'text-yellow-400' : 'text-gray-500'
+                return <span className={`text-xs tabular-nums ${color}`}>{len}/280</span>
+              })()}
+            </div>
             <textarea
               value={form.description}
-              onChange={set('description')}
+              onChange={(e) => { if (e.target.value.length <= 280) set('description')(e) }}
               placeholder="What is your fund's focus and approach?"
               rows="3"
-              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] focus:outline-none focus:border-emerald-500/50 transition resize-none"
+              maxLength={280}
+              className={`w-full bg-[#1a1a1a] border text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition resize-none ${FOCUS_RING} ${errors.description ? 'border-red-500/60' : 'border-[#2a2a2a]'}`}
             />
+            <FieldError msg={errors.description} />
           </div>
 
           <div>
@@ -72,7 +105,7 @@ const CreateFundModal = ({ onSubmit, onCancel }) => {
               value={form.strategy}
               onChange={set('strategy')}
               placeholder="e.g., Growth, Value, Momentum, Long/Short"
-              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] focus:outline-none focus:border-emerald-500/50 transition"
+              className={`w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition ${FOCUS_RING}`}
             />
           </div>
 
@@ -83,25 +116,25 @@ const CreateFundModal = ({ onSubmit, onCancel }) => {
               value={form.minInvestment}
               onChange={set('minInvestment')}
               placeholder="1000"
-              min="0"
+              min="0.01"
               step="0.01"
-              required
-              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] focus:outline-none focus:border-emerald-500/50 transition"
+              className={`w-full bg-[#1a1a1a] border text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition ${FOCUS_RING} ${errors.minInvestment ? 'border-red-500/60' : 'border-[#2a2a2a]'}`}
             />
+            <FieldError msg={errors.minInvestment} />
           </div>
 
           <div className="flex gap-3 pt-2">
             <button
               type="button"
               onClick={onCancel}
-              className="flex-1 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white font-semibold py-2.5 rounded-lg transition border border-[#2a2a2a]"
+              className={`flex-1 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white font-semibold py-2.5 rounded-lg transition border border-[#2a2a2a] ${FOCUS_RING}`}
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg transition"
+              className={`flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg transition ${FOCUS_RING}`}
             >
               {loading ? 'Creating...' : 'Create Fund'}
             </button>
@@ -171,7 +204,7 @@ const InvestModal = ({ fund, onSubmit, onCancel }) => {
               min={fund.min_investment}
               step="0.01"
               required
-              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] focus:outline-none focus:border-emerald-500/50 transition"
+              className={`w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition ${FOCUS_RING}`}
             />
             {error
               ? <div className="text-red-400 text-xs mt-1.5">{error}</div>

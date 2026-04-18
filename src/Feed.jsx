@@ -21,18 +21,27 @@ const Toast = ({ message, onClose }) => {
 }
 
 // Post Trade Modal
+const CONTENT_MAX = 500
+
+function CharCounter({ length, max }) {
+  const pct = length / max
+  const color = pct >= 1 ? 'text-red-400' : pct >= 0.8 ? 'text-yellow-400' : 'text-gray-500'
+  return <span className={`text-xs tabular-nums ${color}`}>{length}/{max}</span>
+}
+
+const FOCUS_RING = 'focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-[#0f0f0f]'
+
 const PostTradeModal = ({ onPost, onCancel }) => {
   const [ticker, setTicker] = useState('')
   const [signal, setSignal] = useState('BUY')
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(false)
 
+  const overLimit = content.length > CONTENT_MAX
+
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!ticker || !content) {
-      alert('Please fill in all fields')
-      return
-    }
+    if (!ticker.trim() || !content.trim() || overLimit) return
     setLoading(true)
     await onPost({ ticker: ticker.toUpperCase(), signal, content })
     setLoading(false)
@@ -43,7 +52,7 @@ const PostTradeModal = ({ onPost, onCancel }) => {
       <div className="bg-[#0f0f0f] rounded-2xl border border-[#2a2a2a] p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-white font-bold text-lg">Post Trade</h2>
-          <button onClick={onCancel} className="text-gray-400 hover:text-white transition">
+          <button onClick={onCancel} aria-label="Close" className={`text-gray-400 hover:text-white transition rounded ${FOCUS_RING}`}>
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -55,7 +64,7 @@ const PostTradeModal = ({ onPost, onCancel }) => {
               value={ticker}
               onChange={(e) => setTicker(e.target.value)}
               placeholder="e.g., NVDA, AAPL, SPY"
-              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition"
+              className={`w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition ${FOCUS_RING}`}
             />
           </div>
           <div>
@@ -63,7 +72,7 @@ const PostTradeModal = ({ onPost, onCancel }) => {
             <select
               value={signal}
               onChange={(e) => setSignal(e.target.value)}
-              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition appearance-none cursor-pointer"
+              className={`w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition appearance-none cursor-pointer ${FOCUS_RING}`}
             >
               <option value="BUY">BUY</option>
               <option value="SELL">SELL</option>
@@ -71,27 +80,30 @@ const PostTradeModal = ({ onPost, onCancel }) => {
             </select>
           </div>
           <div>
-            <label className="text-white text-sm font-semibold block mb-2">Your Reasoning</label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-white text-sm font-semibold">Your Reasoning</label>
+              <CharCounter length={content.length} max={CONTENT_MAX} />
+            </div>
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="Share your analysis and trading reasoning..."
               rows="4"
-              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition resize-none"
+              className={`w-full bg-[#1a1a1a] border text-white px-4 py-2.5 rounded-lg hover:border-[#3a3a3a] transition resize-none ${overLimit ? 'border-red-500/60' : 'border-[#2a2a2a]'} ${FOCUS_RING}`}
             />
           </div>
           <div className="flex gap-3 pt-4">
             <button
               type="button"
               onClick={onCancel}
-              className="flex-1 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white font-semibold py-2.5 rounded-lg transition border border-[#2a2a2a]"
+              className={`flex-1 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white font-semibold py-2.5 rounded-lg transition border border-[#2a2a2a] ${FOCUS_RING}`}
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={loading}
-              className="flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg transition"
+              disabled={loading || overLimit}
+              className={`flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg transition ${FOCUS_RING}`}
             >
               {loading ? 'Posting...' : 'Post Trade'}
             </button>
@@ -440,8 +452,9 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
               <div className="flex items-center gap-2 pt-1">
                 {/* Like */}
                 <button
+                  aria-label="Like post"
                   onClick={() => handleLike(post.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition border ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition border ${FOCUS_RING} ${
                     isLiked
                       ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
                       : 'bg-[#0f0f0f] border-[#2a2a2a] text-gray-400 hover:text-white hover:border-[#3a3a3a]'
@@ -453,8 +466,9 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
 
                 {/* Reply */}
                 <button
+                  aria-label="Reply to post"
                   onClick={() => toggleReplies(post.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition border ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition border ${FOCUS_RING} ${
                     isReplyOpen
                       ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
                       : 'bg-[#0f0f0f] border-[#2a2a2a] text-gray-400 hover:text-white hover:border-[#3a3a3a]'
@@ -466,8 +480,9 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
 
                 {/* Copy Trade — pushed right */}
                 <button
+                  aria-label="Copy this trade"
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCopyModal(post); setCopyQty(1) }}
-                  className="ml-auto px-3 py-1.5 bg-[#0f0f0f] hover:bg-[#2a2a2a] border border-[#2a2a2a] hover:border-emerald-500/40 text-emerald-400 text-xs font-semibold rounded-lg transition"
+                  className={`ml-auto px-3 py-1.5 bg-[#0f0f0f] hover:bg-[#2a2a2a] border border-[#2a2a2a] hover:border-emerald-500/40 text-emerald-400 text-xs font-semibold rounded-lg transition ${FOCUS_RING}`}
                 >
                   Copy Trade
                 </button>
@@ -496,14 +511,25 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
 
                   {/* Reply input */}
                   <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={replyInput[post.id] || ''}
-                      onChange={(e) => setReplyInput(prev => ({ ...prev, [post.id]: e.target.value }))}
-                      onKeyDown={(e) => e.key === 'Enter' && handleReply(post.id)}
-                      placeholder="Write a reply..."
-                      className="flex-1 bg-[#0f0f0f] border border-[#2a2a2a] text-white text-sm px-3 py-2 rounded-lg hover:border-[#3a3a3a] focus:border-emerald-500/50 focus:outline-none transition"
-                    />
+                    <div className="flex-1 space-y-1">
+                      <input
+                        type="text"
+                        value={replyInput[post.id] || ''}
+                        onChange={(e) => {
+                          if (e.target.value.length <= 280)
+                            setReplyInput(prev => ({ ...prev, [post.id]: e.target.value }))
+                        }}
+                        onKeyDown={(e) => e.key === 'Enter' && handleReply(post.id)}
+                        placeholder="Write a reply..."
+                        maxLength={280}
+                        className={`w-full bg-[#0f0f0f] border border-[#2a2a2a] text-white text-sm px-3 py-2 rounded-lg hover:border-[#3a3a3a] transition ${FOCUS_RING}`}
+                      />
+                      {(replyInput[post.id] || '').length > 224 && (
+                        <div className="flex justify-end">
+                          <CharCounter length={(replyInput[post.id] || '').length} max={280} />
+                        </div>
+                      )}
+                    </div>
                     <button
                       onClick={() => handleReply(post.id)}
                       disabled={!(replyInput[post.id] || '').trim() || replySubmitting.has(post.id)}
@@ -555,12 +581,19 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
               value={copyQty}
               onChange={(e) => setCopyQty(e.target.value)}
               min="1"
-              className="w-full bg-[#0f0f0f] border border-[#2a2a2a] text-white px-3 py-2 rounded-lg mb-4 text-sm focus:outline-none focus:border-emerald-500/50"
+              step="1"
+              className={`w-full bg-[#0f0f0f] border text-white px-3 py-2 rounded-lg mb-1 text-sm ${FOCUS_RING} ${
+                (parseInt(copyQty, 10) < 1 || isNaN(parseInt(copyQty, 10))) ? 'border-red-500/60' : 'border-[#2a2a2a]'
+              }`}
             />
+            {(parseInt(copyQty, 10) < 1 || isNaN(parseInt(copyQty, 10))) && (
+              <p className="text-red-400 text-xs mb-3">Enter a whole number of at least 1</p>
+            )}
+            {!(parseInt(copyQty, 10) < 1 || isNaN(parseInt(copyQty, 10))) && <div className="mb-3" />}
             <div className="flex gap-3">
               <button
                 onClick={() => setCopyModal(null)}
-                className="flex-1 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-semibold py-2.5 rounded-lg transition text-sm"
+                className={`flex-1 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-semibold py-2.5 rounded-lg transition text-sm ${FOCUS_RING}`}
               >
                 Cancel
               </button>
@@ -568,6 +601,8 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
                 onClick={async (e) => {
                   e.preventDefault()
                   e.stopPropagation()
+                  const qty = parseInt(copyQty, 10)
+                  if (isNaN(qty) || qty < 1) return
                   setCopyLoading(true)
                   try {
                     const res = await fetch('/api/trade', {
@@ -576,25 +611,26 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
                       body: JSON.stringify({
                         ticker: copyModal.ticker,
                         side: copyModal.signal === 'SELL' ? 'sell' : 'buy',
-                        qty: copyQty
+                        qty
                       })
                     })
                     await res.json()
                     if (copyModal.user_id && user?.id && copyModal.user_id !== user.id) {
                       fetch('/api/notifications', {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ action: 'create', type: 'copy_trade', userId: copyModal.user_id, actorId: user.id, entityId: copyModal.ticker, metadata: { side: copyModal.signal === 'SELL' ? 'sell' : 'buy', qty: copyQty, symbol: copyModal.ticker } }),
+                        body: JSON.stringify({ action: 'create', type: 'copy_trade', userId: copyModal.user_id, actorId: user.id, entityId: copyModal.ticker, metadata: { side: copyModal.signal === 'SELL' ? 'sell' : 'buy', qty, symbol: copyModal.ticker } }),
                       }).catch(() => {})
                     }
                     setCopyModal(null)
-                    setToast(`${copyModal.signal} ${copyQty} × ${copyModal.ticker} executed`)
+                    setToast(`${copyModal.signal} ${qty} × ${copyModal.ticker} executed`)
                   } catch (err) {
                     setToast('Trade failed: ' + err.message)
                   } finally {
                     setCopyLoading(false)
                   }
                 }}
-                className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2.5 rounded-lg transition text-sm"
+                disabled={copyLoading || isNaN(parseInt(copyQty, 10)) || parseInt(copyQty, 10) < 1}
+                className={`flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg transition text-sm ${FOCUS_RING}`}
               >
                 {copyLoading ? 'Executing...' : 'Confirm Copy'}
               </button>

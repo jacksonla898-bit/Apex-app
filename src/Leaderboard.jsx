@@ -97,11 +97,13 @@ const LeaderboardScreen = ({ user }) => {
         {TIME_FILTERS.map(f => (
           <button
             key={f.id}
+            aria-label={`Filter: ${f.label}`}
+            aria-pressed={timeFilter === f.id}
             onClick={() => {
               if (f.id !== 'all') { setToast('Coming soon'); return }
               setTimeFilter(f.id)
             }}
-            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition border ${
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition border focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1 focus:ring-offset-[#0f0f0f] ${
               timeFilter === f.id
                 ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
                 : 'bg-[#1a1a1a] border-[#2a2a2a] text-gray-400 hover:text-gray-200'

@@ -313,15 +313,26 @@ const Profile = ({ userId, currentUser, onBack, onResetOnboarding }) => {
                     type="text"
                     value={editUsername}
                     onChange={(e) => setEditUsername(e.target.value)}
-                    className="bg-[#0f0f0f] border border-[#2a2a2a] text-white px-3 py-1 rounded-lg text-sm"
+                    className="bg-[#0f0f0f] border border-[#2a2a2a] text-white px-3 py-1 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1 focus:ring-offset-[#0f0f0f]"
                   />
-                  <textarea
-                    value={editBio}
-                    onChange={(e) => setEditBio(e.target.value)}
-                    placeholder="Add a bio..."
-                    rows="2"
-                    className="w-full bg-[#0f0f0f] border border-[#2a2a2a] text-white px-3 py-1 rounded-lg text-sm resize-none"
-                  />
+                  <div>
+                    <textarea
+                      value={editBio}
+                      onChange={(e) => { if (e.target.value.length <= 160) setEditBio(e.target.value) }}
+                      placeholder="Add a bio..."
+                      rows="2"
+                      maxLength={160}
+                      className="w-full bg-[#0f0f0f] border border-[#2a2a2a] text-white px-3 py-1 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1 focus:ring-offset-[#0f0f0f]"
+                    />
+                    <div className="flex justify-end mt-0.5">
+                      {(() => {
+                        const len = editBio.length
+                        const pct = len / 160
+                        const color = pct >= 1 ? 'text-red-400' : pct >= 0.8 ? 'text-yellow-400' : 'text-gray-500'
+                        return <span className={`text-xs tabular-nums ${color}`}>{len}/160</span>
+                      })()}
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <>

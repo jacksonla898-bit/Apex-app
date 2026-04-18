@@ -685,14 +685,14 @@ const PortfolioScreen = ({ onLogout, refreshTrigger }) => {
                             const dot = b.action === 'SELL' ? 'bg-red-500' : b.action === 'TRIM' ? 'bg-yellow-500' : 'bg-emerald-500'
                             const lbl = b.action === 'SELL' ? 'text-red-400' : b.action === 'TRIM' ? 'text-yellow-400' : 'text-emerald-400'
                             return (
-                              <span className={`flex items-center gap-1 text-xs font-semibold ${lbl}`}>
+                              <span aria-label={`AI signal: ${b.action}`} className={`flex items-center gap-1 text-xs font-semibold ${lbl}`}>
                                 <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
                                 {b.action}
                               </span>
                             )
                           })()}
                           {badgesLoading && !exitBadges[position.symbol] && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-gray-600 animate-pulse" />
+                            <span aria-label="AI signal: loading" className="w-1.5 h-1.5 rounded-full bg-gray-600 animate-pulse" />
                           )}
                         </div>
                         <div className="text-gray-500 text-xs mt-0.5">
