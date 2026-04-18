@@ -195,6 +195,10 @@ const Profile = ({ userId, currentUser, onBack, onResetOnboarding }) => {
         if (error) throw error
         setIsFollowing(true)
         setFollowers(followers + 1)
+        fetch('/api/notifications', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'create', type: 'follow', userId, actorId: currentUser.id }),
+        }).catch(() => {})
       }
     } catch (err) {
       console.error('Error toggling follow:', err)

@@ -16,6 +16,7 @@ import FeedScreen from './Feed'
 import FundsScreen from './Funds'
 import LeaderboardScreen from './Leaderboard'
 import { TopTradersContext, TopTraderBadge } from './TopTradersContext'
+import NotificationsPanel from './NotificationsPanel'
 import {
   LayoutDashboard,
   Rss,
@@ -37,6 +38,7 @@ import {
   Trophy,
   Shield,
   Star,
+  Bell,
 } from 'lucide-react'
 
 // Toast notification component
@@ -1035,6 +1037,11 @@ const BuyModal = ({ symbol, price, cash, onClose, onBought }) => {
         await recordTrade({ symbol, side: 'buy', quantity: qty, price, sentiment })
       }
 
+      fetch('/api/notifications', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create', type: 'new_trade', actorId: userId, entityId: symbol, metadata: { side: 'buy', qty, symbol } }),
+      }).catch(() => {})
+
       onBought()
       onClose()
     } catch (err) {
@@ -1258,6 +1265,11 @@ const AITraderScreen = ({ onTradeSuccess, initialTicker = null }) => {
       if (entryPrice > 0) {
         await recordTrade({ symbol: tickerInput, side: 'buy', quantity: qty, price: entryPrice, sentiment })
       }
+
+      fetch('/api/notifications', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create', type: 'new_trade', actorId: session?.user?.id, entityId: tickerInput, metadata: { side: 'buy', qty, symbol: tickerInput } }),
+      }).catch(() => {})
 
       if (onTradeSuccess) onTradeSuccess()
     } catch (err) {
@@ -2033,6 +2045,10 @@ export default function App() {
   const [initialAiTicker, setInitialAiTicker] = useState(null)
   const [hasUsername, setHasUsername] = useState(null) // null = not checked yet
   const [topTraderIdsSet, setTopTraderIdsSet] = useState(new Set())
+  const [notifications, setNotifications] = useState([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [notifLoading, setNotifLoading] = useState(false)
+  const [notifPanelOpen, setNotifPanelOpen] = useState(false)
 
   useEffect(() => {
     const checkUser = async () => {
@@ -2089,6 +2105,54 @@ export default function App() {
     const interval = setInterval(fetchIds, 5 * 60 * 1000)
     return () => clearInterval(interval)
   }, [user?.id])
+
+  // Notifications — load on login + poll every 30 seconds
+  useEffect(() => {
+    if (!user) return
+    const load = () => {
+      setNotifLoading(true)
+      fetch(`/api/notifications?userId=${user.id}`)
+        .then(r => r.ok ? r.json() : { notifications: [], unreadCount: 0 })
+        .then(data => {
+          setNotifications(data.notifications || [])
+          setUnreadCount(data.unreadCount || 0)
+        })
+        .catch(() => {})
+        .finally(() => setNotifLoading(false))
+    }
+    load()
+    const interval = setInterval(load, 30 * 1000)
+    return () => clearInterval(interval)
+  }, [user?.id])
+
+  const handleMarkRead = (notifId) => {
+    setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, read: true } : n))
+    setUnreadCount(prev => Math.max(0, prev - 1))
+    fetch('/api/notifications', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ action: 'markRead', userId: user.id, notificationId: notifId }),
+    }).catch(() => {})
+  }
+
+  const handleMarkAllRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })))
+    setUnreadCount(0)
+    fetch('/api/notifications', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ action: 'markAllRead', userId: user.id }),
+    }).catch(() => {})
+  }
+
+  const handleNotifNavigate = (tab, opts) => {
+    if (tab === 'profile' && opts?.actorId) {
+      setViewingProfileId(opts.actorId)
+      setActiveTab('feed')
+    } else {
+      setActiveTab(tab)
+    }
+  }
 
   // Check if user has a username (for existing users who skipped onboarding)
   useEffect(() => {
@@ -2206,14 +2270,37 @@ export default function App() {
   return (
     <TopTradersContext.Provider value={topTraderIdsSet}>
     <div className="min-h-screen bg-[#0f0f0f]">
+      <NotificationsPanel
+        isOpen={notifPanelOpen}
+        onClose={() => setNotifPanelOpen(false)}
+        notifications={notifications}
+        unreadCount={unreadCount}
+        loading={notifLoading}
+        onMarkAllRead={handleMarkAllRead}
+        onMarkRead={handleMarkRead}
+        onNavigate={handleNotifNavigate}
+      />
       {/* Main Content - Centered on Desktop */}
       <div className="mx-auto max-w-2xl h-screen flex flex-col border-x border-[#2a2a2a]">
         {/* Header */}
-        <div className="bg-[#0f0f0f] border-b border-[#2a2a2a] p-4 sticky top-0 z-10">
-          <div className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-emerald-300">
-            Conviction
+        <div className="bg-[#0f0f0f] border-b border-[#2a2a2a] px-4 py-3 sticky top-0 z-10 flex items-center justify-between">
+          <div>
+            <div className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-emerald-300">
+              Conviction
+            </div>
+            <p className="text-gray-500 text-xs mt-0.5">Trade with Conviction</p>
           </div>
-          <p className="text-gray-500 text-xs mt-1">Trade with Conviction</p>
+          <button
+            onClick={() => setNotifPanelOpen(true)}
+            className="relative p-2 text-gray-400 hover:text-white transition"
+          >
+            <Bell className="w-5 h-5" />
+            {unreadCount > 0 && (
+              <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </button>
         </div>
         
         {/* Screen Content */}

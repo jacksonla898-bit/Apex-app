@@ -282,6 +282,13 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
         const { error } = await supabase
           .from('likes').insert([{ post_id: postId, user_id: user.id }])
         if (error) throw error
+        const post = posts.find(p => p.id === postId)
+        if (post?.user_id && post.user_id !== user.id) {
+          fetch('/api/notifications', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'create', type: 'like', userId: post.user_id, actorId: user.id, entityId: postId }),
+          }).catch(() => {})
+        }
       }
     } catch (err) {
       console.error('Error toggling like:', err)
@@ -326,6 +333,13 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
         created_at: new Date().toISOString()
       }])
       if (error) throw error
+      const post = posts.find(p => p.id === postId)
+      if (post?.user_id && post.user_id !== user.id) {
+        fetch('/api/notifications', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'create', type: 'reply', userId: post.user_id, actorId: user.id, entityId: postId }),
+        }).catch(() => {})
+      }
       // Realtime subscription will replace the temp reply with the real one
     } catch (err) {
       console.error('Error posting reply:', err)
@@ -552,6 +566,12 @@ const FeedScreen = ({ onUserClick, setPortfolioRefreshTrigger }) => {
                       })
                     })
                     await res.json()
+                    if (copyModal.user_id && user?.id && copyModal.user_id !== user.id) {
+                      fetch('/api/notifications', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'create', type: 'copy_trade', userId: copyModal.user_id, actorId: user.id, entityId: copyModal.ticker, metadata: { side: copyModal.signal === 'SELL' ? 'sell' : 'buy', qty: copyQty, symbol: copyModal.ticker } }),
+                      }).catch(() => {})
+                    }
                     setCopyModal(null)
                     setToast(`${copyModal.signal} ${copyQty} × ${copyModal.ticker} executed`)
                   } catch (err) {
