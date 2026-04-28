@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { fetchPolygonPrices } from '../lib/polygonPrices.js'
+import { fetchFinnhubPrices } from '../lib/finnhubPrices.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -91,13 +91,13 @@ export default async function handler(req, res) {
     // Fetch current prices from Polygon
     const priceMap = {}
     try {
-      const polygonPrices = await fetchPolygonPrices(positions.map(p => p.symbol))
-      console.log('[user-portfolio] polygonPrices Map:', Object.fromEntries(polygonPrices))
-      for (const [sym, data] of polygonPrices) {
+      const finnhubPrices = await fetchFinnhubPrices(positions.map(p => p.symbol))
+      console.log('[user-portfolio] finnhubPrices Map:', Object.fromEntries(finnhubPrices))
+      for (const [sym, data] of finnhubPrices) {
         if (data.price != null) priceMap[sym] = data.price
       }
     } catch (err) {
-      console.error('Polygon snapshot fetch failed, using entry prices:', err.message)
+      console.error('Finnhub snapshot fetch failed, using entry prices:', err.message)
     }
 
     // Enrich each position with current price and P&L

@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
-import { fetchPolygonPrices } from '../lib/polygonPrices.js'
+import { fetchFinnhubPrices } from '../lib/finnhubPrices.js'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -75,12 +75,12 @@ export default async function handler(req, res) {
     // Fetch current prices from Polygon
     const priceMap = {}
     try {
-      const polygonPrices = await fetchPolygonPrices(symbols.map(s => s.sym))
-      for (const [sym, data] of polygonPrices) {
+      const finnhubPrices = await fetchFinnhubPrices(symbols.map(s => s.sym))
+      for (const [sym, data] of finnhubPrices) {
         if (data.price != null) priceMap[sym] = data.price
       }
     } catch (err) {
-      console.error('Polygon batch fetch failed:', err.message)
+      console.error('Finnhub batch fetch failed:', err.message)
     }
 
     // Build context for Claude

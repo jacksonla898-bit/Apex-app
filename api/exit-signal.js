@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
-import { fetchPolygonPrices } from '../lib/polygonPrices.js'
+import { fetchFinnhubPrices } from '../lib/finnhubPrices.js'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -79,8 +79,8 @@ export default async function handler(req, res) {
     let currentPrice = null
     let priceData    = ''
     try {
-      const polygonPrices = await fetchPolygonPrices([symbol.toUpperCase()])
-      const result = polygonPrices.get(symbol.toUpperCase())
+      const finnhubPrices = await fetchFinnhubPrices([symbol.toUpperCase()])
+      const result = finnhubPrices.get(symbol.toUpperCase())
       currentPrice = result?.price ?? null
       if (result?.dailyBar) {
         const d = result.dailyBar
@@ -88,7 +88,7 @@ export default async function handler(req, res) {
         priceData = `Current: $${currentPrice}, Open: $${d.o}, High: $${d.h}, Low: $${d.l}, Close: $${d.c}, Volume: ${d.v}, Change today: ${changePct}%`
       }
     } catch (err) {
-      console.error('Polygon fetch failed:', err.message)
+      console.error('Finnhub fetch failed:', err.message)
     }
 
     // Compute P&L server-side

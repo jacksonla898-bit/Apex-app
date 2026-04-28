@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { fetchPolygonPrices } from '../lib/polygonPrices.js'
+import { fetchFinnhubPrices } from '../lib/finnhubPrices.js'
 
 const SENTIMENT_WEIGHT = { high: 1.5, regular: 1.0, test: 0.5 }
 const sentimentWeight = (s) => SENTIMENT_WEIGHT[s] ?? 1.0
@@ -75,10 +75,10 @@ export default async function handler(req, res) {
     // Fetch current price from Polygon
     let currentPrice = null
     try {
-      const polygonPrices = await fetchPolygonPrices([symbol.toUpperCase()])
-      currentPrice = polygonPrices.get(symbol.toUpperCase())?.price ?? null
+      const finnhubPrices = await fetchFinnhubPrices([symbol.toUpperCase()])
+      currentPrice = finnhubPrices.get(symbol.toUpperCase())?.price ?? null
     } catch (err) {
-      console.error('Polygon snapshot fetch failed:', err.message)
+      console.error('Finnhub snapshot fetch failed:', err.message)
     }
 
     // Build holders list

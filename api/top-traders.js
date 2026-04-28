@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { fetchPolygonPrices } from '../lib/polygonPrices.js'
+import { fetchFinnhubPrices } from '../lib/finnhubPrices.js'
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -63,12 +63,12 @@ export default async function handler(req, res) {
     const priceMap = {}
     if (allSymbols.size > 0) {
       try {
-        const polygonPrices = await fetchPolygonPrices([...allSymbols])
-        for (const [sym, data] of polygonPrices) {
+        const finnhubPrices = await fetchFinnhubPrices([...allSymbols])
+        for (const [sym, data] of finnhubPrices) {
           if (data.price != null) priceMap[sym] = data.price
         }
       } catch (err) {
-        console.error('Polygon snapshot fetch failed, using entry prices:', err.message)
+        console.error('Finnhub snapshot fetch failed, using entry prices:', err.message)
       }
     }
 
