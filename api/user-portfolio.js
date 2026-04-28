@@ -92,6 +92,7 @@ export default async function handler(req, res) {
     const priceMap = {}
     try {
       const polygonPrices = await fetchPolygonPrices(positions.map(p => p.symbol))
+      console.log('[user-portfolio] polygonPrices Map:', Object.fromEntries(polygonPrices))
       for (const [sym, data] of polygonPrices) {
         if (data.price != null) priceMap[sym] = data.price
       }
