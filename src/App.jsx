@@ -13,7 +13,7 @@ import { supabase, recordTrade } from './supabaseClient'
 import Landing from './Landing'
 import Profile from './Profile'
 import FeedScreen from './Feed'
-import FundsScreen from './Funds'
+// import FundsScreen from './Funds' // hidden until v2 copy-trading rebuild
 import LeaderboardScreen from './Leaderboard'
 import { TopTradersContext, TopTraderBadge } from './TopTradersContext'
 import NotificationsPanel from './NotificationsPanel'
@@ -2214,8 +2214,7 @@ export default function App() {
         />
       case 'leaderboard':
         return <LeaderboardScreen user={user} />
-      case 'funds':
-        return <FundsScreen user={user} />
+      // case 'funds': return <FundsScreen user={user} /> // hidden until v2 copy-trading rebuild
       case 'profile':
         return user ? (
           <Profile
@@ -2309,13 +2308,12 @@ export default function App() {
         </div>
         
         {/* Bottom Navigation */}
-        <div className="border-t border-[#2a2a2a] bg-[#0f0f0f] px-2 py-3 grid grid-cols-6 gap-1 sticky bottom-0">
+        <div className="border-t border-[#2a2a2a] bg-[#0f0f0f] px-2 py-3 grid grid-cols-5 gap-1 sticky bottom-0">
           {[
             { id: 'portfolio',    label: 'Portfolio', Icon: LayoutDashboard },
             { id: 'feed',         label: 'Feed',      Icon: Rss },
             { id: 'ai',           label: 'AI',        Icon: Bot },
             { id: 'leaderboard',  label: 'Leaders',   Icon: Trophy },
-            { id: 'funds',        label: 'Funds',     Icon: Briefcase },
             { id: 'profile',      label: 'Profile',   Icon: User },
           ].map((tab) => (
             <button
